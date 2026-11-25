@@ -1,0 +1,43 @@
+{
+  "title": "Fractions 101",
+  "video": "../media/demo.mp4",
+  "cues": [
+    {
+      "id": "build-three-quarters",
+      "label": "Build 3/4",
+      "start": 12,
+      "end": 14,
+      "toy": "../toys/fraction-builder.html",
+      "rect": { "x": 20, "y": 12, "w": 60, "h": 62 },
+      "pause": true,
+      "resumeOnComplete": true,
+      "params": { "numerator": 3, "denominator": 4, "prompt": "Your turn: shade 3/4 of the bar" }
+    },
+    {
+      "id": "compare-quiz",
+      "label": "Which is bigger?",
+      "start": 26,
+      "end": 28,
+      "toy": "../toys/quiz.html",
+      "rect": { "x": 22, "y": 12, "w": 56, "h": 62 },
+      "pause": true,
+      "resumeOnComplete": true,
+      "params": {
+        "question": "Which is bigger?",
+        "options": ["2/3", "3/5"],
+        "answer": 0,
+        "explain": "2/3 = 10/15, but 3/5 = 9/15.",
+        "rewatchAt": 18
+      }
+    },
+    {
+      "id": "music-fact",
+      "label": "Fractions in music",
+      "start": 32,
+      "end": 42,
+      "toy": "../toys/fact-card.html",
+      "rect": { "x": 66, "y": 5, "w": 31, "h": 24 },
+      "params": { "emoji": "🎵", "text": "¾ time = 3 quarter-note beats per bar.", "more": "That's why waltzes feel like ONE-two-three." }
+    }
+  ]
+}
