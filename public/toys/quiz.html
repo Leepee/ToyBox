@@ -21,6 +21,10 @@
     .opts button.right { background: #dcfce7; border-color: #16a34a; }
     .opts button.wrong { background: #fee2e2; border-color: #dc2626; }
     .fb { font-size: clamp(12px, 3vw, 17px); min-height: 1.4em; }
+    body.dark .card { background: #0b1020f2; color: #e5e7eb; border: 1px solid #ffffff26; }
+    body.dark .opts button { background: #ffffff10; border-color: #ffffff33; color: inherit; }
+    body.dark .opts button.right { background: #14532d; border-color: #4ade80; }
+    body.dark .opts button.wrong { background: #7f1d1d; border-color: #f87171; }
     .rewatch { margin-left: 8px; border: 0; border-radius: 999px; padding: .35em 1em; background: #1e3a8a; color: #fff; cursor: pointer; }
   </style>
 </head>
@@ -35,6 +39,7 @@
 
     ToyBox.onInit(function (p) {
       var tries = 0;
+      if (p.theme === 'dark') document.body.classList.add('dark');
       document.getElementById('q').textContent = p.question;
       var opts = document.getElementById('opts'), fb = document.getElementById('fb');
       opts.innerHTML = '';

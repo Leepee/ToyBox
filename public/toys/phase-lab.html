@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Phase Lab</title>
+  <script src="../toybox-sdk.js"></script>
+  <style>
+    :root { --cyan: #22d3ee; --pink: #f472b6; --green: #4ade80; --muted: #94a3b8; font-family: system-ui, -apple-system, sans-serif; color: #e5e7eb; }
+    html, body { margin: 0; height: 100%; background: transparent; }
+    .card {
+      box-sizing: border-box; height: 100vh; padding: 2.2vh 2.4vw; gap: 1.6vh;
+      background: #0b1020f2; border: 1px solid #ffffff26; border-radius: 16px; box-shadow: 0 12px 40px #000a;
+      display: grid; grid-template-rows: auto 1fr auto auto;
+    }
+    header { display: flex; align-items: baseline; gap: 1.2vw; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: clamp(15px, 3vw, 26px); }
+    .goal { color: var(--muted); font-size: clamp(11px, 1.9vw, 16px); }
+    .body { display: grid; grid-template-columns: 1fr auto; gap: 1.4vw; min-height: 0; }
+    canvas { display: block; touch-action: none; }
+    #waves { width: 100%; height: 100%; border-radius: 10px; background: #070b17; }
+    .dialbox { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .8vh; }
+    #dial { width: min(22vw, 30vh); height: min(22vw, 30vh); cursor: grab; }
+    #dial:active { cursor: grabbing; }
+    .deg { font: 700 clamp(14px, 2.6vw, 24px) system-ui; color: var(--pink); font-variant-numeric: tabular-nums; }
+    .small { font-size: clamp(10px, 1.6vw, 13px); color: var(--muted); text-align: center; }
+    .controls { display: grid; grid-template-columns: auto 1fr; gap: 1vw; align-items: center; font-size: clamp(11px, 1.9vw, 16px); }
+    input[type=range] { width: 100%; accent-color: var(--pink); height: 22px; }
+    footer { display: flex; align-items: center; gap: 1vw; flex-wrap: wrap; font-size: clamp(11px, 1.9vw, 16px); }
+    button { font: inherit; border: 1px solid #ffffff33; background: #ffffff10; color: inherit; border-radius: 999px; padding: .45em 1em; cursor: pointer; }
+    button:hover { background: #ffffff1f; }
+    button.go { margin-left: auto; background: #1e3a8a; border-color: transparent; }
+    button.go.ready { background: var(--green); color: #052e16; font-weight: 700; animation: pulse 1s infinite alternate; }
+    @keyframes pulse { to { box-shadow: 0 0 0 6px #4ade8040; } }
+    .status.win { color: var(--green); font-weight: 700; }
+    .meter { font-variant-numeric: tabular-nums; color: var(--green); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <h1>Phase Lab</h1>
+      <span class="goal" id="goal"></span>
+    </header>
+    <div class="body">
+      <canvas id="waves"></canvas>
+      <div class="dialbox">
+        <canvas id="dial" aria-label="Phase dial: drag to rotate"></canvas>
+        <div class="deg" id="deg">0°</div>
+        <div class="small">drag the dial</div>
+      </div>
+    </div>
+    <div class="controls">
+      <label for="p" style="color:var(--pink);font-weight:700">Phase φ of the pink wave</label>
+      <input id="p" type="range" min="0" max="360" step="1" />
+    </div>
+    <footer>
+      <button id="hear" aria-pressed="false">🔊 Hear the sum</button>
+      <span class="meter" id="meter"></span>
+      <span class="status" id="status" aria-live="polite"></span>
+      <button class="go" id="go">Continue ▶</button>
+    </footer>
+  </div>
+  <script>
+    ToyBox.defaults({ frequency: 2, phase: 30, goal: 'cancel' });
+
+    ToyBox.onInit(function (p) {
+      var $ = function (id) { return document.getElementById(id); };
+      var cv = $('waves'), ctx = cv.getContext('2d');
+      var dial = $('dial'), dctx = dial.getContext('2d');
+      var slider = $('p'), f = p.frequency || 2;
+      var goal = p.goal || 'cancel', done = false, t0 = performance.now(), visited = {};
+      slider.value = p.phase != null ? p.phase : 30;
+      $('goal').textContent = goal === 'cancel'
+        ? 'Find the phase where the two waves cancel to silence'
+        : 'Find the phase where the two waves add up to the biggest wave';
+
+      function phi() { return Number(slider.value) * Math.PI / 180; }
+      function sumAmp() { return Math.abs(2 * Math.cos(phi() / 2)); } // amplitude of sin(x) + sin(x+φ)
+
+      // ---------- sound: a single oscillator playing sin(x) + sin(x+φ)
+      var audio = null;
+      function sound() {
+        if (!audio) return;
+        var ph = phi();
+        // sin(x+φ) = sinφ·cos(x) + cosφ·sin(x), so the sum's Fourier terms are:
+        var real = new Float32Array([0, Math.sin(ph)]), imag = new Float32Array([0, 1 + Math.cos(ph)]);
+        audio.osc.setPeriodicWave(audio.ctx.createPeriodicWave(real, imag, { disableNormalization: true }));
+      }
+      $('hear').onclick = function () {
+        if (audio) { audio.ctx.close(); audio = null; this.textContent = '🔊 Hear the sum'; this.setAttribute('aria-pressed', 'false'); return; }
+        var ac = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = ac.createOscillator(), g = ac.createGain();
+        osc.frequency.value = 220; g.gain.value = 0.12;
+        osc.connect(g).connect(ac.destination); osc.start();
+        audio = { ctx: ac, osc: osc };
+        this.textContent = '🔇 Stop sound'; this.setAttribute('aria-pressed', 'true');
+        sound();
+      };
+
+      function update() {
+        var deg = Number(slider.value);
+        visited[Math.round(deg / 30)] = true;
+        $('deg').textContent = 'φ = ' + deg + '°';
+        $('meter').textContent = 'Sum amplitude: ' + sumAmp().toFixed(2);
+        sound();
+        var hit = goal === 'cancel' ? sumAmp() < 0.08 : sumAmp() > 1.98;
+        if (hit && !done) {
+          done = true;
+          $('status').className = 'status win';
+          $('status').textContent = goal === 'cancel'
+            ? '✓ Silence! At 180° every peak meets a trough.'
+            : '✓ In phase: peaks line up and the wave doubles.';
+          $('go').classList.add('ready');
+        }
+      }
+      slider.addEventListener('input', update);
+      update();
+
+      // drag the dial
+      function fromPointer(e) {
+        var r = dial.getBoundingClientRect();
+        var a = Math.atan2(-(e.clientY - r.top - r.height / 2), e.clientX - r.left - r.width / 2);
+        slider.value = Math.round(((a * 180 / Math.PI) + 360) % 360);
+        update();
+      }
+      var dragging = false;
+      dial.addEventListener('pointerdown', function (e) { dragging = true; dial.setPointerCapture(e.pointerId); fromPointer(e); });
+      dial.addEventListener('pointermove', function (e) { if (dragging) fromPointer(e); });
+      dial.addEventListener('pointerup', function () { dragging = false; });
+
+      $('go').onclick = function () {
+        if (audio) audio.ctx.close();
+        ToyBox.complete({ solved: done, phase: Number(slider.value), anglesExplored: Object.keys(visited).length, seconds: Math.round((performance.now() - t0) / 1000) });
+      };
+
+      function fit(c) {
+        var dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+        if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+        c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+        return [w, h];
+      }
+
+      function draw(now) {
+        var s = fit(cv), w = s[0], h = s[1], pad = 12;
+        var scroll = (now / 1000) * 0.3, ph = phi();
+        ctx.clearRect(0, 0, w, h);
+        var rows = [{ yc: h * 0.27, amp: h * 0.17 }, { yc: h * 0.74, amp: h * 0.11 }];
+        rows.forEach(function (r, k) {
+          ctx.strokeStyle = '#38446e'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(pad + 40, r.yc); ctx.lineTo(w - pad, r.yc); ctx.stroke();
+        });
+        ctx.strokeStyle = '#1a223c'; ctx.beginPath(); ctx.moveTo(pad, h * 0.5); ctx.lineTo(w - pad, h * 0.5); ctx.stroke();
+
+        function wave(row, fn, color, width) {
+          ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+          for (var i = 0; i <= 400; i++) {
+            var u = i / 400, x = pad + 40 + (w - 2 * pad - 40) * u, X = 2 * Math.PI * (f * u - scroll);
+            var y = row.yc - row.amp * fn(X);
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          }
+          ctx.stroke();
+        }
+        wave(rows[0], function (X) { return Math.sin(X); }, '#22d3ee', 2.5);
+        wave(rows[0], function (X) { return Math.sin(X + ph); }, '#f472b6', 3.5);
+        wave(rows[1], function (X) { return Math.sin(X) + Math.sin(X + ph); }, '#4ade80', 4);
+
+        ctx.font = '600 12px system-ui'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#94a3b8'; ctx.fillText('waves', pad, rows[0].yc + 4);
+        ctx.fillStyle = '#4ade80'; ctx.fillText('sum', pad, rows[1].yc + 4);
+
+        // dial
+        var d = fit(dial), R = Math.min(d[0], d[1]) / 2 - 10, cx = d[0] / 2, cy = d[1] / 2;
+        dctx.clearRect(0, 0, d[0], d[1]);
+        dctx.strokeStyle = '#475569'; dctx.lineWidth = 2; dctx.beginPath(); dctx.arc(cx, cy, R, 0, 2 * Math.PI); dctx.stroke();
+        dctx.strokeStyle = '#f472b655'; dctx.lineWidth = R * 0.22; dctx.beginPath(); dctx.arc(cx, cy, R * 0.45, 0, -ph, true); dctx.stroke();
+        dctx.lineWidth = 3;
+        dctx.strokeStyle = '#22d3ee'; dctx.beginPath(); dctx.moveTo(cx, cy); dctx.lineTo(cx + R, cy); dctx.stroke();
+        var px = cx + R * Math.cos(ph), py = cy - R * Math.sin(ph);
+        dctx.strokeStyle = '#f472b6'; dctx.lineWidth = 4; dctx.beginPath(); dctx.moveTo(cx, cy); dctx.lineTo(px, py); dctx.stroke();
+        dctx.fillStyle = '#f472b6'; dctx.beginPath(); dctx.arc(px, py, 9, 0, 2 * Math.PI); dctx.fill();
+        requestAnimationFrame(draw);
+      }
+      requestAnimationFrame(draw);
+    });
+  </script>
+</body>
+</html>

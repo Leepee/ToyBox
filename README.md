@@ -68,12 +68,21 @@ A toy is a plain HTML file (`public/toys/`) that includes the SDK:
 ```
 
 Example toys:
+- `wave-lab.html`: amplitude/frequency (optional phase) sliders, a "match the dashed wave" challenge, and sound
+- `phase-lab.html`: two waves and their sum, with a draggable phase dial; goal is to make them cancel (or reinforce)
+- `fourier-lab.html`: **Build** a wave by dragging spectrum bars or picking presets (square, sawtooth…), or **Draw** any wave and watch the FFT find its sines and rebuild it
 - `fraction-builder.html`: shade *n/d* of a bar (pauses the video, checks the answer)
 - `quiz.html`: multiple choice, with a "rewatch the explanation" button that seeks back
 - `fact-card.html`: a non-blocking pop-up in the corner, with a countdown bar
 
 ### Safety
 Toys are written by educators, not by us, so each toy runs in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`. A toy can draw anything inside its own box, but it can't read or change the player page, its cookies or its storage. It can only send the small set of messages listed above, and the player checks every one of them (`src/toyHost.ts`).
+
+## Demo lessons
+- **Sine Waves** (`lessons/sine-waves.json`): a 95-second lesson covering amplitude, frequency, phase and the FFT, with Wave Lab, a quiz, Phase Lab, Fourier Lab and three fact cards. The video is drawn in code by `scripts/render_sine_video.py` (numpy + Pillow + ffmpeg), so the waves on screen are exact and the soundtrack is generated from the same maths. Re-run it after you change the script.
+- **Fractions 101** (`lessons/fractions.json`): the original starter.
+
+The live demo is deployed to GitHub Pages by `.github/workflows/pages.yml` on every push to `main`.
 
 ## Code map
 

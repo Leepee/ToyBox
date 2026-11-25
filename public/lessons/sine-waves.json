@@ -1,0 +1,90 @@
+{
+  "title": "Sine Waves",
+  "video": "../media/sine-waves.mp4",
+  "cues": [
+    {
+      "id": "fact-middle-a",
+      "label": "Fact: middle A = 440 Hz",
+      "start": 37,
+      "end": 44.5,
+      "toy": "../toys/fact-card.html",
+      "rect": { "x": 66, "y": 3, "w": 31, "h": 19 },
+      "params": { "emoji": "🎹", "text": "Middle A on a piano vibrates 440 times a second: 440 Hz.", "more": "Each octave up doubles the frequency: 880 Hz, 1760 Hz…" }
+    },
+    {
+      "id": "wave-lab",
+      "label": "Wave Lab: amplitude & frequency",
+      "start": 45.6,
+      "end": 47.3,
+      "toy": "../toys/wave-lab.html",
+      "rect": { "x": 6, "y": 5, "w": 88, "h": 86 },
+      "pause": true,
+      "resumeOnComplete": true,
+      "params": {
+        "amplitude": 0.3,
+        "frequency": 1,
+        "target": { "amplitude": 0.8, "frequency": 3 },
+        "tolerance": { "amplitude": 0.05, "frequency": 0.15 },
+        "window": 2
+      }
+    },
+    {
+      "id": "period-quiz",
+      "label": "Quick check: frequency vs period",
+      "start": 48.3,
+      "end": 50.8,
+      "toy": "../toys/quiz.html",
+      "rect": { "x": 22, "y": 24, "w": 56, "h": 54 },
+      "pause": true,
+      "resumeOnComplete": true,
+      "params": {
+        "question": "If you double the frequency, what happens to the period T?",
+        "options": ["It doubles", "It halves"],
+        "answer": 1,
+        "explain": "T = 1/f, so twice the cycles per second means each cycle takes half as long.",
+        "rewatchAt": 38,
+        "theme": "dark"
+      }
+    },
+    {
+      "id": "fact-noise-cancel",
+      "label": "Fact: noise-cancelling headphones",
+      "start": 59.5,
+      "end": 65.8,
+      "toy": "../toys/fact-card.html",
+      "rect": { "x": 66, "y": 3, "w": 31, "h": 19 },
+      "params": { "emoji": "🎧", "text": "Noise-cancelling headphones play the noise back 180° out of phase.", "more": "Its peaks meet the noise's troughs, so the two cancel before they reach your ear." }
+    },
+    {
+      "id": "phase-lab",
+      "label": "Phase Lab: make waves cancel",
+      "start": 66.6,
+      "end": 68.3,
+      "toy": "../toys/phase-lab.html",
+      "rect": { "x": 8, "y": 6, "w": 84, "h": 84 },
+      "pause": true,
+      "resumeOnComplete": true,
+      "params": { "frequency": 2, "phase": 30, "goal": "cancel" }
+    },
+    {
+      "id": "fact-cochlea",
+      "label": "Fact: your ears do Fourier",
+      "start": 77,
+      "end": 83.8,
+      "toy": "../toys/fact-card.html",
+      "rect": { "x": 66, "y": 3, "w": 31, "h": 19 },
+      "params": { "emoji": "👂", "text": "Your inner ear does this too: it splits sound into frequencies.", "more": "Different spots along the cochlea vibrate for different pitches, like a living spectrum analyser." }
+    },
+    {
+      "id": "fourier-lab",
+      "label": "Fourier Lab: build & break waves",
+      "start": 84.6,
+      "end": 86.3,
+      "toy": "../toys/fourier-lab.html",
+      "rect": { "x": 3, "y": 3, "w": 94, "h": 91 },
+      "pause": true,
+      "resumeOnComplete": true,
+      "params": { "harmonics": 12, "startPreset": "square" }
+    }
+  ]
+}

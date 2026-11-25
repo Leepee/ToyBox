@@ -16,13 +16,33 @@ const player = new ToyBoxPlayer(document.getElementById('player')!, {
   },
 });
 
-// ?lesson=lessons/other.json lets you load any lesson file.
-const lessonUrl = new URLSearchParams(location.search).get('lesson') ?? 'lessons/fractions.json';
+interface LessonEntry {
+  file: string;
+  title: string;
+  about?: string;
+}
+
+// ?lesson=lessons/other.json loads any lesson file; otherwise the first one in lessons/index.json.
+const catalog: LessonEntry[] = await fetch('lessons/index.json')
+  .then((r) => (r.ok ? r.json() : []))
+  .catch(() => []);
+const lessonUrl = new URLSearchParams(location.search).get('lesson') ?? catalog[0]?.file ?? 'lessons/fractions.json';
+
+const pick = document.getElementById('lesson-pick') as HTMLSelectElement;
+for (const l of catalog) pick.add(new Option(l.title, l.file, false, l.file === lessonUrl));
+pick.hidden = catalog.length < 2;
+pick.onchange = () => {
+  const u = new URL(location.href);
+  u.searchParams.set('lesson', pick.value);
+  location.href = u.href;
+};
+document.getElementById('lesson-title')!.textContent =
+  catalog.find((l) => l.file === lessonUrl)?.about ?? '';
 
 player
   .loadLesson(lessonUrl)
   .then((lesson) => {
-    document.getElementById('lesson-title')!.textContent = lesson.title;
+    if (!catalog.length) document.getElementById('lesson-title')!.textContent = lesson.title;
     document.title = `${lesson.title} · ToyBox`;
     renderLog(lesson.cues);
   })

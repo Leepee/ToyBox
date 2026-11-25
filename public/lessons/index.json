@@ -1,0 +1,4 @@
+[
+  { "file": "lessons/sine-waves.json", "title": "Sine Waves", "about": "Amplitude, frequency, phase and the FFT" },
+  { "file": "lessons/fractions.json", "title": "Fractions 101", "about": "The original starter demo" }
+]
