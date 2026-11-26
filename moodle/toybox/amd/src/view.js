@@ -423,6 +423,18 @@ var YouTubeMedia = class extends EmbedMedia {
     super.destroy();
   }
 };
+var VIMEO_API = "https://player.vimeo.com/api/player.js";
+var vimeoReady = null;
+function loadVimeoApi() {
+  var _a;
+  const w = window;
+  if ((_a = w.Vimeo) == null ? void 0 : _a.Player) return Promise.resolve(w.Vimeo.Player);
+  vimeoReady != null ? vimeoReady : vimeoReady = typeof w.define === "function" && w.define.amd && typeof w.require === "function" ? new Promise((resolve, reject) => w.require([VIMEO_API], (Player) => {
+    var _a2;
+    return resolve(Player != null ? Player : (_a2 = w.Vimeo) == null ? void 0 : _a2.Player);
+  }, reject)) : loadScript(VIMEO_API).then(() => w.Vimeo.Player);
+  return vimeoReady;
+}
 var VimeoMedia = class extends EmbedMedia {
   constructor(videoId, hash) {
     super();
@@ -431,12 +443,11 @@ var VimeoMedia = class extends EmbedMedia {
     __publicField(this, "kind", "vimeo");
     __publicField(this, "vp", null);
     __publicField(this, "pending", []);
-    loadScript("https://player.vimeo.com/api/player.js").then(() => {
-      const Vimeo = window.Vimeo;
+    loadVimeoApi().then((VimeoPlayer) => {
       const opts = { controls: false, dnt: true, playsinline: true, title: false, byline: false, portrait: false };
       if (hash) opts.url = `https://vimeo.com/${videoId}/${hash}`;
       else opts.id = Number(videoId);
-      this.vp = new Vimeo.Player(this.target, opts);
+      this.vp = new VimeoPlayer(this.target, opts);
       this.vp.on("loaded", () => {
         this.vp.getDuration().then((d) => {
           this.setDuration(d);

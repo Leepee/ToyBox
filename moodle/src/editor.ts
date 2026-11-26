@@ -6,6 +6,7 @@ import { StandaloneToy } from '../../core/src/standalone';
 import { lintToy } from '../../core/src/lint';
 import { buildAiPrompt, guideWithTheme } from '../../core/src/aiPrompt';
 import { EXAMPLES, STARTER } from '../../core/src/examples';
+import { parseVideoUrl } from '../../core/src/media';
 import { el, fromServer, loadTheme, readConfig, type Aspect, type MoodleToy } from './shared';
 
 interface EditorConfig {
@@ -93,7 +94,11 @@ export const init = async (selector: string) => {
       onComplete: (r) => print(`${fmt(r.at)}  complete  ${JSON.stringify(r.result)}`),
       onLog: (_c, d) => print(`log  ${JSON.stringify(d)}`),
     });
-    if (cfg.videoUrl) player.setLesson({ title: '', video: cfg.videoUrl, cues: [] }, location.href);
+    if (cfg.videoUrl) {
+      player.setLesson({ title: '', video: cfg.videoUrl, cues: [] }, location.href);
+      // Gently steer teachers towards uploaded video.
+      if (parseVideoUrl(cfg.videoUrl).kind !== 'file') stage.prepend(el('div.alert.alert-info.small', { text: S.onlinevideo }));
+    }
     else stage.prepend(el('div.alert.alert-warning', { text: S.novideo }));
   } else {
     standalone = new StandaloneToy(stage, {

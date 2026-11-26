@@ -383,6 +383,24 @@ export class YouTubeMedia extends EmbedMedia {
 
 // ---------------------------------------------------------------------------
 
+const VIMEO_API = 'https://player.vimeo.com/api/player.js';
+let vimeoReady: Promise<any> | null = null;
+
+/**
+ * Loads Vimeo's Player constructor. Vimeo's script is UMD: on pages with an AMD
+ * loader (RequireJS in Moodle) it registers itself as an anonymous module instead
+ * of setting window.Vimeo, so there it must be loaded through the loader.
+ */
+function loadVimeoApi(): Promise<any> {
+  const w = window as any;
+  if (w.Vimeo?.Player) return Promise.resolve(w.Vimeo.Player);
+  vimeoReady ??=
+    typeof w.define === 'function' && w.define.amd && typeof w.require === 'function'
+      ? new Promise((resolve, reject) => w.require([VIMEO_API], (Player: any) => resolve(Player ?? w.Vimeo?.Player), reject))
+      : loadScript(VIMEO_API).then(() => w.Vimeo.Player);
+  return vimeoReady;
+}
+
 /** A Vimeo video, controlled through Vimeo's Player.js API. */
 export class VimeoMedia extends EmbedMedia {
   readonly kind = 'vimeo' as const;
@@ -394,13 +412,12 @@ export class VimeoMedia extends EmbedMedia {
     readonly hash?: string,
   ) {
     super();
-    loadScript('https://player.vimeo.com/api/player.js')
-      .then(() => {
-        const Vimeo = (window as any).Vimeo;
+    loadVimeoApi()
+      .then((VimeoPlayer) => {
         const opts: Record<string, unknown> = { controls: false, dnt: true, playsinline: true, title: false, byline: false, portrait: false };
         if (hash) opts.url = `https://vimeo.com/${videoId}/${hash}`;
         else opts.id = Number(videoId);
-        this.vp = new Vimeo.Player(this.target, opts);
+        this.vp = new VimeoPlayer(this.target, opts);
         this.vp.on('loaded', () => {
           this.vp.getDuration().then((d: number) => {
             this.setDuration(d);

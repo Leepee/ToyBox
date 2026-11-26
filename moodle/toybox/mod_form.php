@@ -56,6 +56,7 @@ class mod_toybox_mod_form extends moodleform_mod {
             'upload' => get_string('videosource_upload', 'toybox'),
             'url' => get_string('videosource_url', 'toybox'),
         ]);
+        $mform->addHelpButton('videosource', 'videosource', 'toybox');
         $mform->hideIf('videosource', 'mode', 'eq', 'toy');
 
         $mform->addElement(

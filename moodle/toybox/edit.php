@@ -48,7 +48,7 @@ foreach (
         'copyaiprompt', 'copyaiprompt_help', 'deletetoy', 'deletetoyconfirm', 'downloadguide', 'end', 'height',
         'makewithai', 'messages', 'messageshelp', 'novideo', 'noproblems', 'pausevideo', 'posx', 'posy', 'preview',
         'previewing', 'promptcopied', 'promptfailed', 'replacecode', 'requiredtoy', 'resumeoncomplete', 'saved',
-        'savechanges', 'downloadguide_help',
+        'savechanges', 'downloadguide_help', 'onlinevideo',
         'shape', 'start', 'startfrom', 'starthere', 'starthere_help', 'toy', 'toycode', 'toylabel',
         'toyparams', 'unsaved', 'untitled', 'width'] as $key
 ) {
