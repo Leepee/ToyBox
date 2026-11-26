@@ -1,5 +1,6 @@
 import type { LintIssue } from './lint';
 import { themePromptSection, type Theme } from './theme';
+import { STARTER } from './examples';
 
 export interface PromptContext {
   mode: 'video' | 'toy';
@@ -55,28 +56,35 @@ export function buildAiPrompt(guide: string, ctx: PromptContext, theme?: Theme):
   if (ctx.params && Object.keys(ctx.params as object).length)
     facts.push('- Current settings (params):\n```json\n' + JSON.stringify(ctx.params, null, 2) + '\n```');
 
-  let ask: string;
-  if (ctx.existingHtml?.trim()) {
-    ask = [
-      '## My current toy',
-      '```html',
-      ctx.existingHtml.trim(),
-      '```',
-      ctx.issues?.length ? '\nThe ToyBox checker reported:\n' + ctx.issues.map((i) => `- (${i.level}) ${i.message}`).join('\n') : '',
-      '',
-      '## What I want changed',
-      '[Describe what to fix or improve. If the checker found problems, ask for those to be fixed.]',
-    ].join('\n');
-  } else {
-    ask = [
-      '## What I want',
-      '- Subject and level: [e.g. GCSE physics, first-year undergraduate statistics]',
-      '- The idea the learner should *feel* by playing: [e.g. “doubling the frequency halves the period”]',
-      '- What the learner does: [drag, slide, sort, build, predict, draw…]',
-      '- How it ends (what counts as done): [e.g. “matches the target wave”, “answers 3 questions”]',
-      '- Anything to avoid or include: [vocabulary, colours, accessibility needs]',
-    ].join('\n');
-  }
+  // The blank starter counts as "no toy yet", however its whitespace was saved.
+  const squash = (h: string) => h.replace(/\s+/g, '');
+  const existing = ctx.existingHtml?.trim() && squash(ctx.existingHtml) !== squash(STARTER) ? ctx.existingHtml.trim() : '';
+
+  // The educator's requirements: always included, so there's always somewhere to say what they want.
+  const requirements = [
+    '## What I want',
+    existing ? 'Change the toy above as follows, keeping whatever already works:' : '',
+    existing ? '- What to change or fix: [e.g. “make the target random”, “add a hint after two wrong tries”]' : '',
+    '- Subject and level: [e.g. GCSE physics, first-year undergraduate statistics]',
+    '- The idea the learner should *feel* by playing: [e.g. “doubling the frequency halves the period”]',
+    '- What the learner does: [drag, slide, sort, build, predict, draw…]',
+    '- How it ends (what counts as done): [e.g. “matches the target wave”, “answers 3 questions”]',
+    '- Anything to avoid or include: [vocabulary, colours, accessibility needs]',
+  ].filter(Boolean);
+
+  const ask = existing
+    ? [
+        '## My current toy',
+        '```html',
+        existing,
+        '```',
+        ctx.issues?.length
+          ? '\nThe ToyBox checker reported these problems. Please fix them too:\n' + ctx.issues.map((i) => `- (${i.level}) ${i.message}`).join('\n')
+          : '',
+        '',
+        ...requirements,
+      ].join('\n')
+    : requirements.join('\n');
 
   return `${guide.trim()}
 

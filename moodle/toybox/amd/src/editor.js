@@ -1118,73 +1118,6 @@ function lintToy(html, ctx = {}) {
   return out;
 }
 
-// core/src/aiPrompt.ts
-function guideWithTheme(guide, theme) {
-  if (!theme) return guide;
-  return `${guide.trim()}
-
----
-
-# This institution's style (${theme.name})
-
-${themePromptSection(theme).replace(/^## Look and feel\n/, "")}
-`;
-}
-var mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-function buildAiPrompt(guide, ctx, theme) {
-  var _a, _b, _c;
-  const facts = [];
-  if (ctx.mode === "toy") {
-    facts.push("- Mode: **toy only** (no video). `ToyBox.hasVideo` will be false.");
-    facts.push(
-      ctx.aspect === "auto" ? "- Size: **fit content**. The page width is fixed by the course page; the height follows your content. Do not use 100vh." : `- Size: a **${(_a = ctx.aspect) != null ? _a : "16:9"}** box that scales with the screen. Fill it (height: 100vh is fine).`
-    );
-  } else {
-    facts.push("- Mode: **on top of a video**. `ToyBox.hasVideo` will be true.");
-    if (ctx.rect)
-      facts.push(`- Box: ${ctx.rect.w}% \xD7 ${ctx.rect.h}% of the video frame (16:9), at ${ctx.rect.x}% from the left and ${ctx.rect.y}% from the top.`);
-    if (ctx.start != null) facts.push(`- Appears at ${mmss(ctx.start)}${ctx.end != null ? `, until ${mmss(ctx.end)}` : ""}.`);
-    facts.push(ctx.pause ? "- The video pauses while the toy is shown, and resumes when it calls ToyBox.complete()." : "- The video keeps playing while the toy is shown (keep it light and glanceable).");
-  }
-  if (ctx.params && Object.keys(ctx.params).length)
-    facts.push("- Current settings (params):\n```json\n" + JSON.stringify(ctx.params, null, 2) + "\n```");
-  let ask;
-  if ((_b = ctx.existingHtml) == null ? void 0 : _b.trim()) {
-    ask = [
-      "## My current toy",
-      "```html",
-      ctx.existingHtml.trim(),
-      "```",
-      ((_c = ctx.issues) == null ? void 0 : _c.length) ? "\nThe ToyBox checker reported:\n" + ctx.issues.map((i) => `- (${i.level}) ${i.message}`).join("\n") : "",
-      "",
-      "## What I want changed",
-      "[Describe what to fix or improve. If the checker found problems, ask for those to be fixed.]"
-    ].join("\n");
-  } else {
-    ask = [
-      "## What I want",
-      "- Subject and level: [e.g. GCSE physics, first-year undergraduate statistics]",
-      "- The idea the learner should *feel* by playing: [e.g. \u201Cdoubling the frequency halves the period\u201D]",
-      "- What the learner does: [drag, slide, sort, build, predict, draw\u2026]",
-      "- How it ends (what counts as done): [e.g. \u201Cmatches the target wave\u201D, \u201Canswers 3 questions\u201D]",
-      "- Anything to avoid or include: [vocabulary, colours, accessibility needs]"
-    ].join("\n");
-  }
-  return `${guide.trim()}
-
----
-
-# My request
-
-## This toy
-${facts.join("\n")}
-${theme ? "\n" + themePromptSection(theme) + "\n" : ""}
-${ask}
-
-Please reply with the complete toy as **one HTML file** in a single code block, then the settings JSON (params) in a second code block, then 2\u20133 sentences on how a learner uses it.
-`;
-}
-
 // core/src/examples.ts
 var STARTER = `<!doctype html>
 <html>
@@ -1252,6 +1185,72 @@ var EXAMPLES = [
     pause: false
   }
 ];
+
+// core/src/aiPrompt.ts
+function guideWithTheme(guide, theme) {
+  if (!theme) return guide;
+  return `${guide.trim()}
+
+---
+
+# This institution's style (${theme.name})
+
+${themePromptSection(theme).replace(/^## Look and feel\n/, "")}
+`;
+}
+var mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+function buildAiPrompt(guide, ctx, theme) {
+  var _a, _b, _c;
+  const facts = [];
+  if (ctx.mode === "toy") {
+    facts.push("- Mode: **toy only** (no video). `ToyBox.hasVideo` will be false.");
+    facts.push(
+      ctx.aspect === "auto" ? "- Size: **fit content**. The page width is fixed by the course page; the height follows your content. Do not use 100vh." : `- Size: a **${(_a = ctx.aspect) != null ? _a : "16:9"}** box that scales with the screen. Fill it (height: 100vh is fine).`
+    );
+  } else {
+    facts.push("- Mode: **on top of a video**. `ToyBox.hasVideo` will be true.");
+    if (ctx.rect)
+      facts.push(`- Box: ${ctx.rect.w}% \xD7 ${ctx.rect.h}% of the video frame (16:9), at ${ctx.rect.x}% from the left and ${ctx.rect.y}% from the top.`);
+    if (ctx.start != null) facts.push(`- Appears at ${mmss(ctx.start)}${ctx.end != null ? `, until ${mmss(ctx.end)}` : ""}.`);
+    facts.push(ctx.pause ? "- The video pauses while the toy is shown, and resumes when it calls ToyBox.complete()." : "- The video keeps playing while the toy is shown (keep it light and glanceable).");
+  }
+  if (ctx.params && Object.keys(ctx.params).length)
+    facts.push("- Current settings (params):\n```json\n" + JSON.stringify(ctx.params, null, 2) + "\n```");
+  const squash = (h) => h.replace(/\s+/g, "");
+  const existing = ((_b = ctx.existingHtml) == null ? void 0 : _b.trim()) && squash(ctx.existingHtml) !== squash(STARTER) ? ctx.existingHtml.trim() : "";
+  const requirements = [
+    "## What I want",
+    existing ? "Change the toy above as follows, keeping whatever already works:" : "",
+    existing ? "- What to change or fix: [e.g. \u201Cmake the target random\u201D, \u201Cadd a hint after two wrong tries\u201D]" : "",
+    "- Subject and level: [e.g. GCSE physics, first-year undergraduate statistics]",
+    "- The idea the learner should *feel* by playing: [e.g. \u201Cdoubling the frequency halves the period\u201D]",
+    "- What the learner does: [drag, slide, sort, build, predict, draw\u2026]",
+    "- How it ends (what counts as done): [e.g. \u201Cmatches the target wave\u201D, \u201Canswers 3 questions\u201D]",
+    "- Anything to avoid or include: [vocabulary, colours, accessibility needs]"
+  ].filter(Boolean);
+  const ask = existing ? [
+    "## My current toy",
+    "```html",
+    existing,
+    "```",
+    ((_c = ctx.issues) == null ? void 0 : _c.length) ? "\nThe ToyBox checker reported these problems. Please fix them too:\n" + ctx.issues.map((i) => `- (${i.level}) ${i.message}`).join("\n") : "",
+    "",
+    ...requirements
+  ].join("\n") : requirements.join("\n");
+  return `${guide.trim()}
+
+---
+
+# My request
+
+## This toy
+${facts.join("\n")}
+${theme ? "\n" + themePromptSection(theme) + "\n" : ""}
+${ask}
+
+Please reply with the complete toy as **one HTML file** in a single code block, then the settings JSON (params) in a second code block, then 2\u20133 sentences on how a learner uses it.
+`;
+}
 
 // moodle/src/shared.ts
 function readConfig(root) {
