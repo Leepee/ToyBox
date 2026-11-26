@@ -29,7 +29,7 @@
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="toyboxid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
         <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
-        <FIELD NAME="label" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="label" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false"/>
         <FIELD NAME="html" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="The toy's code. Only ever run inside a sandboxed iframe."/>
         <FIELD NAME="params" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON settings passed to the toy"/>
         <FIELD NAME="starttime" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="2"/>
