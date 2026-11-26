@@ -74,6 +74,13 @@ class mod_toybox_mod_form extends moodleform_mod {
         $mform->hideIf('videourl', 'mode', 'eq', 'toy');
         $mform->hideIf('videourl', 'videosource', 'eq', 'upload');
 
+        $mform->addElement('select', 'display', get_string('display', 'toybox'), [
+            'page' => get_string('display_page', 'toybox'),
+            'inline' => get_string('display_inline', 'toybox'),
+        ]);
+        $mform->addHelpButton('display', 'display', 'toybox');
+        $mform->setDefault('display', 'page');
+
         $this->standard_coursemodule_elements();
         $this->add_action_buttons();
     }
@@ -116,8 +123,8 @@ class mod_toybox_mod_form extends moodleform_mod {
                 $errors['videourl'] = get_string('required');
             } else if (!preg_match('#^https?://#i', $url)) {
                 $errors['videourl'] = get_string('error_badurl', 'toybox');
-            } else if (\mod_toybox\local\toys::is_streaming_site($url)) {
-                $errors['videourl'] = get_string('error_streamingsite', 'toybox');
+            } else if (\mod_toybox\local\toys::video_provider($url) && !\mod_toybox\local\toys::video_id($url)) {
+                $errors['videourl'] = get_string('error_videoid', 'toybox');
             }
         } else {
             $draft = file_get_drafarea_files($data['videofile'] ?? 0);

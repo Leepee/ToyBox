@@ -35,3 +35,17 @@
 .mod-toybox-lint li.tip { border-color: #0d6efd; }
 .mod-toybox-lint li.ok { border-color: #198754; color: #198754; }
 .mod-toybox-out { font-size: .8rem; max-height: 160px; overflow: auto; margin: 0; white-space: pre-wrap; }
+
+/* Shown on the course page */
+.mod-toybox-inline { margin: .25rem 0 .5rem; }
+.mod-toybox-inline .mod-toybox-stage { min-height: 120px; }
+.mod-toybox-inline-head { display: flex; align-items: baseline; gap: .75rem; margin-bottom: .5rem; }
+.mod-toybox-inline-name { font-size: 1.1rem; margin: 0; }
+.mod-toybox-embedpage #page, .mod-toybox-embedpage #region-main { padding: 0; margin: 0; }
+.mod-toybox-embedpage .mod-toybox-view { margin: 0; }
+/* Course formats size activity content to fit; make course-page ToyBoxes take the full width. */
+.mod-toybox-inline { display: block; width: 100%; flex: 1 1 100%; min-width: 0; }
+.activity-altcontent:has(> .mod-toybox-inline), .contentwithoutlink:has(.mod-toybox-inline), .activity-item .description:has(.mod-toybox-inline) { width: 100%; flex: 1 1 100%; }
+.mod-toybox-view .tb-standalone { width: 100%; }
+.mod-toybox-progress, .mod-toybox-progress li { list-style: none !important; margin-left: 0; padding-left: 0; }
+.mod-toybox-progress li::marker { content: none; }

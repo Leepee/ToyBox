@@ -53,15 +53,116 @@ class toys {
         ];
     }
 
+    /** @var string[] Display options: a page of its own, or straight on the course page. */
+    public const DISPLAYS = ['page', 'inline'];
+
     /**
-     * Whether a URL is a YouTube/Vimeo page (not yet supported: they need their own players).
+     * Which video site a URL belongs to.
      *
      * @param string $url
-     * @return bool
+     * @return string|null 'youtube', 'vimeo' or null for anything else (a video file)
      */
-    public static function is_streaming_site(string $url): bool {
+    public static function video_provider(string $url): ?string {
         $host = strtolower((string) parse_url($url, PHP_URL_HOST));
-        return (bool) preg_match('/(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com)$/', $host);
+        if (preg_match('/(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/', $host)) {
+            return 'youtube';
+        }
+        if (preg_match('/(^|\.)vimeo\.com$/', $host)) {
+            return 'vimeo';
+        }
+        return null;
+    }
+
+    /**
+     * The video id in a YouTube or Vimeo link (null if there isn't one).
+     *
+     * @param string $url
+     * @return string|null
+     */
+    public static function video_id(string $url): ?string {
+        $provider = self::video_provider($url);
+        $parts = parse_url($url);
+        $path = $parts['path'] ?? '';
+        parse_str($parts['query'] ?? '', $query);
+        if ($provider === 'youtube') {
+            $id = $query['v'] ?? null;
+            if (!$id && preg_match('#^/(?:embed/|shorts/|live/|v/)?([\w-]{11})(?:[/?]|$)#', $path, $m)) {
+                $id = $m[1];
+            }
+            return ($id && preg_match('/^[\w-]{11}$/', $id)) ? $id : null;
+        }
+        if ($provider === 'vimeo' && preg_match('#^/(?:video/)?(\d+)#', $path, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * Renders a ToyBox activity's player (or toy) and loads its JavaScript.
+     * Used by view.php, embed.php and on the course page.
+     *
+     * @param stdClass $toybox
+     * @param \cm_info|stdClass $cm
+     * @param context_module $context
+     * @param string $where 'page', 'embed' or 'inline' (course page)
+     * @return string HTML
+     */
+    public static function render(stdClass $toybox, $cm, context_module $context, string $where = 'page'): string {
+        global $OUTPUT, $PAGE, $USER;
+        $toylist = self::get_toys($toybox->id);
+        $videourl = self::video_url($toybox, $context);
+        $canedit = has_capability('mod/toybox:edittoys', $context);
+        $cansubmit = has_capability('mod/toybox:submit', $context, null, false) && !isguestuser();
+        $course = get_course($cm->course);
+        $completion = new \completion_info($course);
+        $complete = $completion->is_enabled($cm)
+            && $completion->get_data($cm, false, $USER->id)->completionstate == COMPLETION_COMPLETE;
+
+        $config = [
+            'cmid' => (int) $cm->id,
+            'mode' => $toybox->mode,
+            'aspect' => $toybox->aspect,
+            'theme' => get_config('mod_toybox', 'theme') ?: 'auto',
+            'inline' => $where === 'inline',
+            'videoUrl' => $videourl,
+            'sdkUrl' => (new moodle_url('/mod/toybox/sdk/toybox-sdk.js'))->out(false),
+            'toys' => self::export_for_js($toylist),
+            'finished' => self::finished_toy_ids($toybox->id, $USER->id),
+            'canSubmit' => $cansubmit,
+            'activityComplete' => $complete,
+            'strings' => [
+                'activitycomplete' => get_string('activitycomplete', 'toybox'),
+                'finished' => get_string('finished', 'toybox'),
+                'jumpto' => get_string('jumpto', 'toybox'),
+                'optional' => get_string('optional', 'toybox'),
+                'untitled' => get_string('untitled', 'toybox'),
+                'toysinthisvideo' => get_string('toysinthisvideo', 'toybox'),
+                'loading' => get_string('loading', 'toybox'),
+            ],
+        ];
+
+        $notice = null;
+        if ($toybox->mode === 'video' && !$videourl) {
+            $notice = get_string('novideo', 'toybox');
+        } else if (!$toylist && $toybox->mode === 'toy') {
+            $notice = get_string($canedit ? 'notoyyet_teacher' : 'notoyyet', 'toybox');
+        }
+        if (!$notice) {
+            // One watcher per page starts every ToyBox on it (including ones the course page adds later).
+            $PAGE->requires->js_call_amd('mod_toybox/view', 'initAll');
+        }
+        $editurl = new moodle_url('/mod/toybox/edit.php', ['id' => $cm->id]);
+        return $OUTPUT->render_from_template('mod_toybox/view', [
+            'rootid' => 'mod-toybox-' . $cm->id . '-' . $where,
+            'inline' => $where === 'inline',
+            'name' => format_string($toybox->name, true, ['context' => $context]),
+            'notice' => $notice,
+            'canedit' => $canedit,
+            'editurl' => $editurl->out(false),
+            'notoys' => !$toylist,
+            'istoy' => $toybox->mode === 'toy',
+            'configjson' => json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
+        ]);
     }
 
     /**

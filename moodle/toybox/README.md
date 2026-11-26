@@ -4,7 +4,7 @@ An activity where learners play with small interactive **toys**: HTML widgets fo
 
 Each activity is one of two types:
 
-- **Video with toys**: toys appear on top of a video at chosen moments. A toy can pause the video until the learner has played with it, and can jump back to the relevant part of the video.
+- **Video with toys**: toys appear on top of a video at chosen moments. The video can be an uploaded file, a link to a video file, or a **YouTube** or **Vimeo** link. A toy can pause the video until the learner has played with it, and can jump back to the relevant part of the video.
 - **Toy only**: a single toy on its own, with no video. Put several on a course page to build your own sequence.
 
 Teachers write toys in HTML, or get an AI to write them: the toy editor's **Copy AI prompt** button bundles a detailed toy-making guide with the toy's details, ready to paste into ChatGPT, Claude, Gemini or Copilot.
@@ -22,13 +22,28 @@ Teachers write toys in HTML, or get an AI to write them: the toy editor's **Copy
 
 ## Using it
 
-1. In a course, **Add an activity → ToyBox**. Choose the type, and for video, upload a video (mp4/webm) or link to a video file.
+1. In a course, **Add an activity → ToyBox**. Choose the type. For video, upload a video (mp4/webm), or paste a YouTube, Vimeo or video-file link.
+   Choose **Display**: *Open as a page*, or **Show on the course page** so learners don't need to click into it.
 2. Open the activity and choose **Edit toys** (in the activity's "More" menu if it's not shown).
    - Pick **Start from an example**, or **Copy AI prompt** and paste the AI's HTML into *Toy code*.
    - **Preview** runs it live. The **Checker** explains anything that won't work.
    - On a video: pause the preview where a toy should appear, then press **Start here**. Set its box with Left/Top/Width/Height (% of the video).
 3. **Completion:** in the activity settings, choose *Add requirements → Learners must finish all required toys*. Each toy has a *Required for completion* tick box. ToyBox is not graded.
 4. **Results** (in the activity menu) shows who has finished which toy, and what each toy reported.
+
+## Showing ToyBox on the course page, or anywhere
+
+- **Display → Show on the course page** puts the toy, or the video with its toys, straight into the course section, like a label. It works in standard formats and in Onetopic.
+  - Players load only when scrolled into view, and starting one video pauses any other on the page.
+  - Finishing toys still counts for completion. The view is logged when the player first appears, so the "view" completion rule works too.
+- **Embed code**: editors see it under the activity. It's an `<iframe>` of `mod/toybox/embed.php?id=…` (just the player, no Moodle page around it), for use in a Page, Book or other text. To embed on other websites, turn on *Allow frame embedding* (Site administration → Security → HTTP security).
+
+## YouTube and Vimeo
+
+- **YouTube** plays from `youtube-nocookie.com` (privacy-enhanced mode), with YouTube's own controls hidden. ToyBox's controls drive it through YouTube's IFrame Player API.
+- **Vimeo** plays with *do not track* on, through Vimeo's Player API. Vimeo only hides its own controls for videos on paid Vimeo plans; otherwise both sets show.
+- Toys appear within a fraction of a second of their time; uploaded video files are frame-accurate.
+- Learners' browsers need to reach `youtube.com`/`youtube-nocookie.com` or `vimeo.com`, as for any embedded video.
 
 ## Look and feel
 
@@ -61,7 +76,6 @@ Toys are code written by teachers or AI, so they never run in the Moodle page it
 
 ## Not yet
 
-- YouTube and Vimeo (links to video files work).
 - Moodle app (mobile) support.
 - Dragging toys into position on the preview (positions are typed as percentages).
 

@@ -35,7 +35,7 @@ class backup_toybox_activity_structure_step extends backup_activity_structure_st
         $userinfo = $this->get_setting_value('userinfo');
 
         $toybox = new backup_nested_element('toybox', ['id'], [
-            'name', 'intro', 'introformat', 'mode', 'videosource', 'videourl', 'aspect',
+            'name', 'intro', 'introformat', 'mode', 'videosource', 'videourl', 'aspect', 'display',
             'completionrequired', 'timecreated', 'timemodified']);
         $toys = new backup_nested_element('toys');
         $toy = new backup_nested_element('toy', ['id'], [

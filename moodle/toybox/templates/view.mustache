@@ -21,7 +21,9 @@
 
     Example context (json):
     {
-        "rootid": "mod-toybox-1",
+        "rootid": "mod-toybox-1-page",
+        "inline": false,
+        "name": "Sine waves",
         "notice": "",
         "canedit": true,
         "editurl": "https://example.com/mod/toybox/edit.php?id=1",
@@ -30,7 +32,13 @@
         "configjson": "{}"
     }
 }}
-<div id="{{rootid}}" class="mod-toybox-view">
+<div id="{{rootid}}" class="mod-toybox-view{{#inline}} mod-toybox-inline{{/inline}}" data-region="mod-toybox">
+    {{#inline}}
+        <div class="mod-toybox-inline-head">
+            <h3 class="mod-toybox-inline-name">{{name}}</h3>
+            {{#canedit}}<a class="small" href="{{editurl}}">{{#str}} edittoys, mod_toybox {{/str}}</a>{{/canedit}}
+        </div>
+    {{/inline}}
     {{#canedit}}
         {{#notoys}}
             <div class="alert alert-info">

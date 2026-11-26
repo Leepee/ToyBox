@@ -32,6 +32,13 @@ $functions = [
         'ajax' => true,
         'capabilities' => 'mod/toybox:submit',
     ],
+    'mod_toybox_view_toybox' => [
+        'classname' => 'mod_toybox\external\view_toybox',
+        'description' => 'Logs that a ToyBox shown on the course page was viewed (for view completion).',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'mod/toybox:view',
+    ],
     'mod_toybox_save_toys' => [
         'classname' => 'mod_toybox\external\save_toys',
         'description' => 'Saves all toys (code, timing, position) of a ToyBox activity.',

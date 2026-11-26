@@ -30,7 +30,7 @@ npm run build:moodle     # rebuild the Moodle plugin's JS/CSS after changing cor
 
 ## Two ways to use a toy
 
-- **On a video:** the toy appears at a set moment, in a box over part of the video. It can pause the video, seek it, and resume it when finished.
+- **On a video:** the toy appears at a set moment, in a box over part of the video. It can pause the video, seek it, and resume it when finished. The video can be a file, or a **YouTube** or **Vimeo** link (`core/src/media.ts`). Try a link in the playground's *Video* field.
 - **Toy only:** the toy stands alone on a page, as a fixed shape (16:9, 4:3, square, 3:4) or sized to fit its content. `ToyBox.hasVideo` is `false`, so toys can hide video-only buttons.
 
 ## Themes (your institution's look)
@@ -129,6 +129,7 @@ The live demo is deployed to GitHub Pages by `.github/workflows/pages.yml` on ev
 | File | What it does |
 |---|---|
 | `core/src/player.ts` | Video, controls, timeline markers, and syncing toys to frames (`requestVideoFrameCallback`) |
+| `core/src/media.ts` | Video sources: file, YouTube (IFrame API, youtube-nocookie.com) and Vimeo (Player.js) behind one interface |
 | `core/src/standalone.ts` | A single toy on its own (toy-only mode) |
 | `core/src/toyHost.ts` | Creates the sandboxed iframes, adds the no-network CSP, and handles the message protocol |
 | `core/src/lint.ts`, `core/src/aiPrompt.ts` | The toy checker and the AI prompt builder |
@@ -138,7 +139,6 @@ The live demo is deployed to GitHub Pages by `.github/workflows/pages.yml` on ev
 
 ## Roadmap ideas
 - Drag-to-position toys on the video preview
-- YouTube/Vimeo as video sources
 - HLS/adaptive streaming via `hls.js`
 - Toy library and gallery; shared toy styles/theme
 - Accessibility pass: captions, keyboard focus moving into a toy when it pauses the video

@@ -10,6 +10,8 @@ interface ViewConfig {
   mode: 'video' | 'toy';
   aspect: Aspect;
   theme: string;
+  /** Shown on the course page: load when scrolled into view, and log the view. */
+  inline: boolean;
   videoUrl: string | null;
   sdkUrl: string;
   toys: any[];
@@ -19,14 +21,55 @@ interface ViewConfig {
   strings: Record<string, string>;
 }
 
+/** All players on the page, so starting one video can pause the others. */
+const players = new Set<ToyBoxPlayer>();
+
+/** Starts one ToyBox (kept for callers that pass a selector). */
+export const init = (selector: string) => {
+  const root = document.querySelector<HTMLElement>(selector);
+  if (root) setup(root);
+};
+
+let watching = false;
+
+/**
+ * Starts every ToyBox on the page, and any added later (the course page
+ * re-renders activities when teachers move or edit them).
+ */
+export const initAll = () => {
+  const scan = () => document.querySelectorAll<HTMLElement>('[data-region="mod-toybox"]').forEach(setup);
+  scan();
+  if (watching) return;
+  watching = true;
+  new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+};
+
+function setup(root: HTMLElement) {
+  if (root.dataset.tbStarted || !root.querySelector('script.mod-toybox-config')) return;
+  root.dataset.tbStarted = '1';
+  const cfg = readConfig<ViewConfig>(root);
+  if (!cfg.inline || !('IntersectionObserver' in window)) {
+    start(root, cfg);
+    return;
+  }
+  // On the course page: only build the player when it's (nearly) on screen.
+  const io = new IntersectionObserver(
+    (entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      start(root, cfg);
+      Promise.resolve(Ajax.call([{ methodname: 'mod_toybox_view_toybox', args: { cmid: cfg.cmid } }])[0]).catch(() => {});
+    },
+    { rootMargin: '300px 0px' },
+  );
+  io.observe(root);
+}
+
 /**
  * The student view: plays the video with its toys, or shows the single toy,
  * and saves each finished toy so Moodle completion can tick over.
  */
-export const init = async (selector: string) => {
-  const root = document.querySelector(selector);
-  if (!root) return;
-  const cfg = readConfig<ViewConfig>(root);
+async function start(root: HTMLElement, cfg: ViewConfig) {
   const theme = await loadTheme(cfg.theme, cfg.sdkUrl);
   const toys = fromServer(cfg.toys);
   const finished = new Set(cfg.finished.map(String));
@@ -103,8 +146,12 @@ export const init = async (selector: string) => {
     },
   });
   player.setLesson({ title: '', video: cfg.videoUrl, cues: toys }, location.href);
+  players.add(player);
+  player.media?.addEventListener('play', () => {
+    for (const other of players) if (other !== player) other.pause();
+  });
   if (toys.length) {
     root.append(el('h3.mod-toybox-progress-title', { text: cfg.strings.toysinthisvideo }), list);
     renderList();
   }
-};
+}

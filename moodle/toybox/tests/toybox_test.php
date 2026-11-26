@@ -142,12 +142,64 @@ final class toybox_test extends \advanced_testcase {
     }
 
     /**
-     * YouTube and Vimeo URLs are recognised (and rejected by the form for now).
+     * YouTube and Vimeo links are recognised, and their video ids found.
      */
-    public function test_streaming_sites(): void {
-        $this->assertTrue(toys::is_streaming_site('https://www.youtube.com/watch?v=x'));
-        $this->assertTrue(toys::is_streaming_site('https://youtu.be/x'));
-        $this->assertTrue(toys::is_streaming_site('https://vimeo.com/123'));
-        $this->assertFalse(toys::is_streaming_site('https://example.com/youtube.com.mp4'));
+    public function test_video_links(): void {
+        $this->assertEquals('youtube', toys::video_provider('https://www.youtube.com/watch?v=jNQXAC9IVRw'));
+        $this->assertEquals('jNQXAC9IVRw', toys::video_id('https://www.youtube.com/watch?v=jNQXAC9IVRw&t=4'));
+        $this->assertEquals('jNQXAC9IVRw', toys::video_id('https://youtu.be/jNQXAC9IVRw'));
+        $this->assertEquals('jNQXAC9IVRw', toys::video_id('https://www.youtube.com/shorts/jNQXAC9IVRw'));
+        $this->assertEquals('jNQXAC9IVRw', toys::video_id('https://www.youtube-nocookie.com/embed/jNQXAC9IVRw'));
+        $this->assertNull(toys::video_id('https://www.youtube.com/channel/abc'));
+        $this->assertEquals('vimeo', toys::video_provider('https://vimeo.com/76979871'));
+        $this->assertEquals('76979871', toys::video_id('https://player.vimeo.com/video/76979871?h=abc'));
+        $this->assertNull(toys::video_provider('https://example.com/youtube.com.mp4'));
+    }
+
+    /**
+     * A ToyBox set to show on the course page has no link and puts the player in the course page.
+     */
+    public function test_course_page_display(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $inline = $this->getDataGenerator()->create_module('toybox', ['course' => $course->id, 'display' => 'inline']);
+        $page = $this->getDataGenerator()->create_module('toybox', ['course' => $course->id]);
+        $this->getDataGenerator()->get_plugin_generator('mod_toybox')->create_toy($inline);
+        $this->setUser($this->getDataGenerator()->create_and_enrol($course, 'student'));
+        $PAGE->set_url('/course/view.php', ['id' => $course->id]);
+
+        $modinfo = get_fast_modinfo($course);
+        $cm = $modinfo->get_cm($inline->cmid);
+        $this->assertNull($cm->url, 'No link to a separate page');
+        $content = $cm->get_formatted_content();
+        $this->assertStringContainsString('data-region="mod-toybox"', $content);
+        $this->assertStringContainsString('"inline":true', html_entity_decode($content));
+
+        $other = $modinfo->get_cm($page->cmid);
+        $this->assertNotNull($other->url);
+        $this->assertStringNotContainsString('data-region="mod-toybox"', $other->get_formatted_content());
+    }
+
+    /**
+     * Viewing a course-page ToyBox (via the web service) counts for view completion.
+     */
+    public function test_view_service_completes_view(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $CFG->enablecompletion = 1;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+        $toybox = $this->getDataGenerator()->create_module('toybox', [
+            'course' => $course->id, 'display' => 'inline',
+            'completion' => COMPLETION_TRACKING_AUTOMATIC, 'completionview' => 1,
+        ]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($student);
+        $sink = $this->redirectEvents();
+        $this->assertTrue(\mod_toybox\external\view_toybox::execute($toybox->cmid)['status']);
+        $this->assertInstanceOf(\mod_toybox\event\course_module_viewed::class, $sink->get_events()[0]);
+        $cm = get_fast_modinfo($course)->get_cm($toybox->cmid);
+        $state = (new \completion_info($course))->get_data($cm, false, $student->id)->completionstate;
+        $this->assertEquals(COMPLETION_COMPLETE, $state);
     }
 }

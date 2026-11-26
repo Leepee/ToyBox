@@ -31,6 +31,12 @@ $string['completiondetail:required'] = 'Finish all required toys';
 $string['completionrequired'] = 'Learners must finish all required toys';
 $string['completionrequired_desc'] = 'Learners must finish all required toys';
 $string['completionrequired_help'] = 'A toy counts as finished when it reports completion (for example, the learner solves its challenge or presses Done). Each toy can be marked as required or optional in the toy editor.';
+$string['display'] = 'Display';
+$string['display_help'] = 'Open as a page: learners click the activity to open it.
+
+Show on the course page: the toy (or video with its toys) appears right on the course page, like a label, so learners don\'t have to click into it. Players only load when they scroll into view, and starting one video pauses any other.';
+$string['display_inline'] = 'Show on the course page';
+$string['display_page'] = 'Open as a page';
 $string['editor_addtoy'] = 'Add toy';
 $string['editor_allsaved'] = 'All changes saved';
 $string['editor_aspect11'] = 'Square';
@@ -80,12 +86,15 @@ $string['editor_width'] = 'Width %';
 $string['editorintro_toy'] = 'Write the toy\'s code, or use "Copy AI prompt" to have an AI write it, then press Preview.';
 $string['editorintro_video'] = 'Each toy appears over the video at its start time. Pause the preview where you want a toy, add one, and press "Start here".';
 $string['edittoys'] = 'Edit toys';
+$string['embedcode'] = 'Embed code';
+$string['embedcode_help'] = 'Paste this into a Page, Book or other Moodle text (in HTML mode) to show this activity there. To embed it on other websites, "Allow frame embedding" must be enabled in Site administration > Security > HTTP security.';
 $string['error_badparams'] = 'The settings of toy "{$a}" are not valid JSON.';
 $string['error_badurl'] = 'Enter a full web address starting with http:// or https://';
-$string['error_streamingsite'] = 'YouTube and Vimeo pages are not supported yet. Upload the video, or link directly to a video file (for example .mp4).';
 $string['error_toytoobig'] = 'A toy can be at most 1 MB.';
+$string['error_videoid'] = 'Couldn\'t find a video in this YouTube or Vimeo link. Copy the address of the video\'s own page.';
 $string['finished'] = 'Finished';
 $string['jumpto'] = 'Jump to this toy';
+$string['loading'] = 'Loading…';
 $string['mode'] = 'Type';
 $string['mode_help'] = 'Video with toys: interactive toys appear on top of a video at chosen moments.
 
@@ -133,6 +142,8 @@ $string['untitled'] = 'Untitled toy';
 $string['videofile'] = 'Video file';
 $string['videosource'] = 'Video';
 $string['videosource_upload'] = 'Upload a video file';
-$string['videosource_url'] = 'Link to a video file';
+$string['videosource_url'] = 'Link: YouTube, Vimeo or a video file';
 $string['videourl'] = 'Video address';
-$string['videourl_help'] = 'A direct link to a video file, such as https://example.com/lesson.mp4. The server must allow the video to be played from other sites. YouTube and Vimeo pages are not supported yet.';
+$string['videourl_help'] = 'A YouTube or Vimeo link (for example https://www.youtube.com/watch?v=… or https://vimeo.com/…), or a direct link to a video file such as https://example.com/lesson.mp4.
+
+YouTube videos play from youtube-nocookie.com (privacy-enhanced mode). Vimeo videos play with "do not track" on. ToyBox shows its own controls; some Vimeo plans still show Vimeo\'s.';

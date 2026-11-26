@@ -108,6 +108,397 @@ function prepareToyHtml(html, sdkUrl, lockdown = true) {
   return head + out;
 }
 
+// core/src/media.ts
+function parseVideoUrl(url) {
+  var _a, _b, _c, _d, _e;
+  let u;
+  try {
+    u = new URL(url, location.href);
+  } catch {
+    return { kind: "file", url };
+  }
+  const host = u.hostname.replace(/^www\.|^m\./, "");
+  if (/^(youtube\.com|youtube-nocookie\.com|youtu\.be)$/.test(host)) {
+    const id = host === "youtu.be" ? u.pathname.slice(1) : (_b = u.searchParams.get("v")) != null ? _b : (_a = u.pathname.match(/^\/(?:embed|shorts|live|v)\/([^/?#]+)/)) == null ? void 0 : _a[1];
+    if (id && /^[\w-]{11}$/.test(id)) {
+      const t = (_c = u.searchParams.get("t")) != null ? _c : u.searchParams.get("start");
+      const start = t ? parseTime(t) : void 0;
+      return { kind: "youtube", id, ...start ? { start } : {} };
+    }
+  }
+  if (/^(vimeo\.com|player\.vimeo\.com)$/.test(host)) {
+    const m = u.pathname.match(/^\/(?:video\/)?(\d+)(?:\/([0-9a-f]+))?/);
+    if (m) {
+      const hash = (_e = (_d = m[2]) != null ? _d : u.searchParams.get("h")) != null ? _e : void 0;
+      return { kind: "vimeo", id: m[1], ...hash ? { hash } : {} };
+    }
+  }
+  return { kind: "file", url: u.href };
+}
+function parseTime(t) {
+  var _a, _b, _c;
+  if (/^\d+$/.test(t)) return Number(t);
+  const m = t.match(/(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
+  return m ? Number((_a = m[1]) != null ? _a : 0) * 3600 + Number((_b = m[2]) != null ? _b : 0) * 60 + Number((_c = m[3]) != null ? _c : 0) : 0;
+}
+function createMedia(url) {
+  const v = parseVideoUrl(url);
+  if (v.kind === "youtube") return new YouTubeMedia(v.id);
+  if (v.kind === "vimeo") return new VimeoMedia(v.id, v.hash);
+  return new FileMedia(v.url);
+}
+var FileMedia = class {
+  constructor(src) {
+    __publicField(this, "kind", "file");
+    __publicField(this, "el");
+    const v = document.createElement("video");
+    v.className = "tb-media";
+    v.playsInline = true;
+    v.preload = "auto";
+    v.src = src;
+    this.el = v;
+  }
+  get currentTime() {
+    return this.el.currentTime;
+  }
+  set currentTime(t) {
+    this.el.currentTime = t;
+  }
+  get duration() {
+    return this.el.duration;
+  }
+  get paused() {
+    return this.el.paused;
+  }
+  get readyState() {
+    return this.el.readyState;
+  }
+  get muted() {
+    return this.el.muted;
+  }
+  set muted(m) {
+    this.el.muted = m;
+  }
+  play() {
+    return this.el.play().catch(() => {
+    });
+  }
+  pause() {
+    this.el.pause();
+  }
+  addEventListener(type, fn) {
+    this.el.addEventListener(type, fn);
+  }
+  removeEventListener(type, fn) {
+    this.el.removeEventListener(type, fn);
+  }
+  destroy() {
+    this.el.removeAttribute("src");
+    this.el.load();
+    this.el.remove();
+  }
+};
+var EmbedMedia = class {
+  constructor() {
+    __publicField(this, "el");
+    __publicField(this, "target");
+    __publicField(this, "events", new EventTarget());
+    __publicField(this, "listeners", /* @__PURE__ */ new Map());
+    __publicField(this, "time", 0);
+    __publicField(this, "stamp", 0);
+    __publicField(this, "playing", false);
+    __publicField(this, "stalled", false);
+    __publicField(this, "dur", NaN);
+    __publicField(this, "ready", false);
+    __publicField(this, "isMuted", false);
+    this.el = document.createElement("div");
+    this.el.className = "tb-media tb-embed";
+    this.target = document.createElement("div");
+    this.el.appendChild(this.target);
+  }
+  get currentTime() {
+    if (!this.playing || this.stalled) return this.time;
+    const t = this.time + (performance.now() - this.stamp) / 1e3;
+    return Number.isFinite(this.dur) ? Math.min(t, this.dur) : t;
+  }
+  set currentTime(t) {
+    this.report(t);
+    this.seekTo(t);
+  }
+  get duration() {
+    return this.dur;
+  }
+  get paused() {
+    return !this.playing;
+  }
+  get readyState() {
+    return this.ready && Number.isFinite(this.dur) ? 1 : 0;
+  }
+  get muted() {
+    return this.isMuted;
+  }
+  set muted(m) {
+    this.isMuted = m;
+    this.setMuted(m);
+  }
+  play() {
+    this.doPlay();
+    return Promise.resolve();
+  }
+  pause() {
+    if (this.playing) {
+      this.report(this.currentTime);
+      this.playing = false;
+      this.emit("pause");
+    }
+    this.doPause();
+  }
+  addEventListener(type, fn) {
+    const l = () => fn();
+    this.listeners.set(fn, l);
+    this.events.addEventListener(type, l);
+  }
+  removeEventListener(type, fn) {
+    const l = this.listeners.get(fn);
+    if (l) this.events.removeEventListener(type, l);
+  }
+  destroy() {
+    this.el.remove();
+  }
+  // ---- for subclasses
+  emit(type) {
+    this.events.dispatchEvent(new Event(type));
+  }
+  /** The provider told us the time. */
+  report(t) {
+    this.time = t;
+    this.stamp = performance.now();
+  }
+  setPlaying(p) {
+    if (p === this.playing) return;
+    this.report(this.currentTime);
+    this.playing = p;
+    this.emit(p ? "play" : "pause");
+  }
+  setStalled(s) {
+    if (s === this.stalled) return;
+    this.report(this.currentTime);
+    this.stalled = s;
+  }
+  setDuration(d) {
+    if (!(d > 0) || d === this.dur) return;
+    this.dur = d;
+    this.emit("durationchange");
+    if (this.ready) this.emit("loadedmetadata");
+  }
+  markReady() {
+    this.ready = true;
+    if (Number.isFinite(this.dur)) this.emit("loadedmetadata");
+  }
+};
+var scripts = /* @__PURE__ */ new Map();
+function loadScript(src) {
+  if (!scripts.has(src)) {
+    scripts.set(
+      src,
+      new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error(`Couldn't load ${src}`));
+        document.head.appendChild(s);
+      })
+    );
+  }
+  return scripts.get(src);
+}
+var ytReady = null;
+function loadYouTubeApi() {
+  var _a;
+  const w = window;
+  if ((_a = w.YT) == null ? void 0 : _a.Player) return Promise.resolve(w.YT);
+  ytReady != null ? ytReady : ytReady = new Promise((resolve, reject) => {
+    const prev = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = () => {
+      prev == null ? void 0 : prev();
+      resolve(w.YT);
+    };
+    loadScript("https://www.youtube.com/iframe_api").catch(reject);
+  });
+  return ytReady;
+}
+var YouTubeMedia = class extends EmbedMedia {
+  constructor(videoId) {
+    super();
+    this.videoId = videoId;
+    __publicField(this, "kind", "youtube");
+    __publicField(this, "yt", null);
+    __publicField(this, "poll", 0);
+    __publicField(this, "pending", []);
+    loadYouTubeApi().then((YT) => {
+      this.yt = new YT.Player(this.target, {
+        host: "https://www.youtube-nocookie.com",
+        videoId,
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          controls: 0,
+          // ToyBox draws its own controls
+          disablekb: 1,
+          fs: 0,
+          rel: 0,
+          playsinline: 1,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          enablejsapi: 1,
+          origin: location.origin
+        },
+        events: {
+          onReady: () => {
+            var _a, _b, _c;
+            this.setDuration((_c = (_b = (_a = this.yt).getDuration) == null ? void 0 : _b.call(_a)) != null ? _c : NaN);
+            this.markReady();
+            for (const fn of this.pending.splice(0)) fn();
+          },
+          onStateChange: (e) => this.onState(e.data)
+        }
+      });
+    }).catch(() => this.emit("error"));
+  }
+  call(fn) {
+    if (this.ready) fn();
+    else this.pending.push(fn);
+  }
+  onState(s) {
+    var _a, _b, _c;
+    this.setDuration((_c = (_b = (_a = this.yt).getDuration) == null ? void 0 : _b.call(_a)) != null ? _c : NaN);
+    if (s === 1 || s === 3) {
+      this.report(this.yt.getCurrentTime());
+      this.setStalled(s === 3);
+      this.setPlaying(true);
+      this.startPolling();
+    } else if (s === 2 || s === 0) {
+      this.report(this.yt.getCurrentTime());
+      this.setPlaying(false);
+      this.stopPolling();
+      if (s === 0) this.emit("ended");
+    }
+  }
+  startPolling() {
+    if (this.poll) return;
+    this.poll = window.setInterval(() => {
+      var _a;
+      if (!((_a = this.yt) == null ? void 0 : _a.getCurrentTime)) return;
+      this.report(this.yt.getCurrentTime());
+      this.emit("timeupdate");
+    }, 250);
+  }
+  stopPolling() {
+    clearInterval(this.poll);
+    this.poll = 0;
+  }
+  seekTo(t) {
+    this.call(() => {
+      this.yt.seekTo(t, true);
+      setTimeout(() => this.emit("seeked"), 150);
+    });
+  }
+  doPlay() {
+    this.call(() => this.yt.playVideo());
+  }
+  doPause() {
+    this.call(() => this.yt.pauseVideo());
+  }
+  setMuted(m) {
+    this.call(() => m ? this.yt.mute() : this.yt.unMute());
+  }
+  destroy() {
+    var _a;
+    this.stopPolling();
+    try {
+      (_a = this.yt) == null ? void 0 : _a.destroy();
+    } catch {
+    }
+    super.destroy();
+  }
+};
+var VimeoMedia = class extends EmbedMedia {
+  constructor(videoId, hash) {
+    super();
+    this.videoId = videoId;
+    this.hash = hash;
+    __publicField(this, "kind", "vimeo");
+    __publicField(this, "vp", null);
+    __publicField(this, "pending", []);
+    loadScript("https://player.vimeo.com/api/player.js").then(() => {
+      const Vimeo = window.Vimeo;
+      const opts = { controls: false, dnt: true, playsinline: true, title: false, byline: false, portrait: false };
+      if (hash) opts.url = `https://vimeo.com/${videoId}/${hash}`;
+      else opts.id = Number(videoId);
+      this.vp = new Vimeo.Player(this.target, opts);
+      this.vp.on("loaded", () => {
+        this.vp.getDuration().then((d) => {
+          this.setDuration(d);
+          this.markReady();
+          for (const fn of this.pending.splice(0)) fn();
+        });
+      });
+      this.vp.on("play", (d) => {
+        var _a;
+        this.report((_a = d == null ? void 0 : d.seconds) != null ? _a : this.currentTime);
+        this.setPlaying(true);
+      });
+      this.vp.on("pause", (d) => {
+        var _a;
+        this.report((_a = d == null ? void 0 : d.seconds) != null ? _a : this.currentTime);
+        this.setPlaying(false);
+      });
+      this.vp.on("ended", () => {
+        this.setPlaying(false);
+        this.emit("ended");
+      });
+      this.vp.on("timeupdate", (d) => {
+        this.report(d.seconds);
+        this.setDuration(d.duration);
+        this.emit("timeupdate");
+      });
+      this.vp.on("seeked", (d) => {
+        this.report(d.seconds);
+        this.emit("seeked");
+      });
+      this.vp.on("bufferstart", () => this.setStalled(true));
+      this.vp.on("bufferend", () => this.setStalled(false));
+    }).catch(() => this.emit("error"));
+  }
+  call(fn) {
+    if (this.ready) fn();
+    else this.pending.push(fn);
+  }
+  seekTo(t) {
+    this.call(() => this.vp.setCurrentTime(t).catch(() => {
+    }));
+  }
+  doPlay() {
+    this.call(() => this.vp.play().catch(() => {
+    }));
+  }
+  doPause() {
+    this.call(() => this.vp.pause().catch(() => {
+    }));
+  }
+  setMuted(m) {
+    this.call(() => this.vp.setMuted(m).catch(() => {
+    }));
+  }
+  destroy() {
+    var _a;
+    (_a = this.vp) == null ? void 0 : _a.destroy().catch(() => {
+    });
+    super.destroy();
+  }
+};
+
 // core/src/theme.ts
 var THEMES = {
   toybox: {
@@ -352,8 +743,13 @@ var ToyBoxPlayer = class {
   constructor(container, opts = {}) {
     this.opts = opts;
     __publicField(this, "root");
-    __publicField(this, "video");
+    /** The current video source (null until a lesson is set). */
+    __publicField(this, "media", null);
+    __publicField(this, "mediaSrc", "");
+    __publicField(this, "stage");
+    __publicField(this, "shield");
     __publicField(this, "overlay");
+    __publicField(this, "looping", false);
     __publicField(this, "markers");
     __publicField(this, "scrub");
     __publicField(this, "timeLabel");
@@ -368,7 +764,7 @@ var ToyBoxPlayer = class {
     container.innerHTML = `
       <div class="tb-player">
         <div class="tb-stage">
-          <video playsinline preload="auto"></video>
+          <div class="tb-shield"></div>
           <div class="tb-overlay"></div>
         </div>
         <div class="tb-controls">
@@ -383,7 +779,8 @@ var ToyBoxPlayer = class {
       </div>`;
     const q = (s) => container.querySelector(s);
     this.root = q(".tb-player");
-    this.video = q("video");
+    this.stage = q(".tb-stage");
+    this.shield = q(".tb-shield");
     this.overlay = q(".tb-overlay");
     this.markers = q(".tb-markers");
     this.scrub = q(".tb-scrub");
@@ -391,7 +788,11 @@ var ToyBoxPlayer = class {
     this.playBtn = q(".tb-play");
     if (opts.theme) applyTheme(opts.theme, this.root);
     this.wireControls(q(".tb-fs"));
-    this.startClock();
+  }
+  /** The video source; kept as `video` for older callers. */
+  get video() {
+    var _a;
+    return (_a = this.media) != null ? _a : EMPTY_MEDIA;
   }
   async loadLesson(url) {
     const abs = new URL(url, location.href).href;
@@ -402,10 +803,11 @@ var ToyBoxPlayer = class {
     return lesson;
   }
   setLesson(lesson, baseUrl = location.href) {
+    var _a;
     this.baseUrl = baseUrl;
     const src = new URL(lesson.video, baseUrl).href;
-    if (this.video.src !== src) this.video.src = src;
-    if (lesson.poster) this.video.poster = new URL(lesson.poster, baseUrl).href;
+    if (this.mediaSrc !== src) this.setMedia(createMedia(src), src);
+    if (lesson.poster && ((_a = this.media) == null ? void 0 : _a.el) instanceof HTMLVideoElement) this.media.el.poster = new URL(lesson.poster, baseUrl).href;
     this.setCues(lesson.cues);
   }
   /** Replace the cue list (used live by the playground). */
@@ -423,36 +825,65 @@ var ToyBoxPlayer = class {
     this.sync();
   }
   play() {
-    return this.video.play().catch(() => {
-    });
+    var _a, _b;
+    return (_b = (_a = this.media) == null ? void 0 : _a.play()) != null ? _b : Promise.resolve();
   }
   pause() {
-    this.video.pause();
+    var _a;
+    (_a = this.media) == null ? void 0 : _a.pause();
   }
   seek(t) {
-    const d = this.video.duration || Infinity;
-    this.video.currentTime = Math.max(0, Math.min(t, d));
+    if (!this.media) return;
+    const d = this.media.duration || Infinity;
+    this.media.currentTime = Math.max(0, Math.min(t, d));
+    this.sync();
+  }
+  /** Stop and remove the video and toys (e.g. when the player leaves the page). */
+  destroy() {
+    var _a;
+    for (const t of this.active.values()) t.destroy();
+    this.active.clear();
+    (_a = this.media) == null ? void 0 : _a.destroy();
+    this.media = null;
+    this.root.remove();
   }
   // ---- internals -------------------------------------------------------
-  startClock() {
-    const v = this.video;
-    if (v.requestVideoFrameCallback) {
-      const loop = () => {
-        this.sync();
-        v.requestVideoFrameCallback(loop);
-      };
-      v.requestVideoFrameCallback(loop);
-      for (const ev of ["seeked", "pause", "loadedmetadata", "timeupdate"]) v.addEventListener(ev, () => this.sync());
-    } else {
-      const loop = () => {
-        this.sync();
-        requestAnimationFrame(loop);
-      };
-      requestAnimationFrame(loop);
-    }
+  setMedia(media, src) {
+    var _a;
+    (_a = this.media) == null ? void 0 : _a.destroy();
+    this.media = media;
+    this.mediaSrc = src;
+    this.root.dataset.media = media.kind;
+    this.stage.insertBefore(media.el, this.shield);
+    for (const ev of ["seeked", "pause", "loadedmetadata", "durationchange", "timeupdate", "ended"]) media.addEventListener(ev, () => this.sync());
+    media.addEventListener("loadedmetadata", () => this.renderMarkers());
+    media.addEventListener("durationchange", () => this.renderMarkers());
+    media.addEventListener("play", () => this.startLoop());
+    if (!media.paused) this.startLoop();
+    this.sync();
+  }
+  /**
+   * Runs sync() every frame while the video plays (and stops when it pauses, so
+   * idle players on a course page cost nothing). Uses requestVideoFrameCallback
+   * for video files, so toys appear on the exact frame.
+   */
+  startLoop() {
+    var _a;
+    if (this.looping) return;
+    this.looping = true;
+    const v = (_a = this.media) == null ? void 0 : _a.el;
+    const next = (fn) => (v == null ? void 0 : v.requestVideoFrameCallback) ? v.requestVideoFrameCallback(fn) : requestAnimationFrame(fn);
+    const tick = () => {
+      this.sync();
+      if (this.media && !this.media.paused) next(tick);
+      else this.looping = false;
+    };
+    next(tick);
   }
   sync() {
-    const t = this.video.currentTime;
+    const m = this.media;
+    if (!m) return;
+    const t = m.currentTime;
     for (const cue of this.cues) {
       const inside = t >= cue.start && t < cue.end;
       const mounted = this.active.get(cue.id);
@@ -466,7 +897,7 @@ var ToyBoxPlayer = class {
     if (now - this.lastTimePost > 250) {
       this.lastTimePost = now;
       for (const toy of this.active.values()) {
-        toy.post({ type: "time", time: t, duration: this.video.duration || 0, paused: this.video.paused });
+        toy.post({ type: "time", time: t, duration: m.duration || 0, paused: m.paused });
       }
     }
     this.renderControls();
@@ -484,10 +915,10 @@ var ToyBoxPlayer = class {
     Object.assign(toy.el.style, { left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%` });
     this.overlay.appendChild(toy.el);
     this.active.set(cue.id, toy);
-    if (cue.pause && !this.video.paused) this.video.pause();
+    if (cue.pause && this.media && !this.media.paused) this.media.pause();
   }
   onToyMessage(msg, cue) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f;
     switch (msg.type) {
       case "pause":
         this.pause();
@@ -499,22 +930,21 @@ var ToyBoxPlayer = class {
         this.seek(msg.time);
         break;
       case "complete":
-        (_b = (_a = this.opts).onComplete) == null ? void 0 : _b.call(_a, { cueId: cue.id, label: cue.label, at: this.video.currentTime, result: msg.result });
+        (_d = (_c = this.opts).onComplete) == null ? void 0 : _d.call(_c, { cueId: cue.id, label: cue.label, at: (_b = (_a = this.media) == null ? void 0 : _a.currentTime) != null ? _b : 0, result: msg.result });
         if (cue.resumeOnComplete) this.play();
         break;
       case "log":
-        (_d = (_c = this.opts).onLog) == null ? void 0 : _d.call(_c, cue, msg.data);
+        (_f = (_e = this.opts).onLog) == null ? void 0 : _f.call(_e, cue, msg.data);
         break;
     }
   }
   wireControls(fsBtn) {
-    const v = this.video;
-    this.playBtn.onclick = () => v.paused ? this.play() : this.pause();
-    v.addEventListener("click", () => v.paused ? this.play() : this.pause());
+    const toggle = () => this.video.paused ? this.play() : this.pause();
+    this.playBtn.onclick = toggle;
+    this.shield.addEventListener("click", toggle);
     this.scrub.oninput = () => {
-      if (v.duration) this.seek(Number(this.scrub.value) / 1e3 * v.duration);
+      if (this.video.duration) this.seek(Number(this.scrub.value) / 1e3 * this.video.duration);
     };
-    v.addEventListener("loadedmetadata", () => this.renderMarkers());
     fsBtn.onclick = () => {
       var _a, _b;
       if (document.fullscreenElement) document.exitFullscreen();
@@ -525,9 +955,9 @@ var ToyBoxPlayer = class {
       if (e.target !== this.root) return;
       if (e.key === " " || e.key === "k") {
         e.preventDefault();
-        v.paused ? this.play() : this.pause();
-      } else if (e.key === "ArrowRight") this.seek(v.currentTime + 5);
-      else if (e.key === "ArrowLeft") this.seek(v.currentTime - 5);
+        toggle();
+      } else if (e.key === "ArrowRight") this.seek(this.video.currentTime + 5);
+      else if (e.key === "ArrowLeft") this.seek(this.video.currentTime - 5);
     });
   }
   renderControls() {
@@ -553,6 +983,24 @@ var ToyBoxPlayer = class {
       m.onclick = () => this.seek(c.start);
       this.markers.appendChild(m);
     }
+  }
+};
+var EMPTY_MEDIA = {
+  kind: "file",
+  el: document.createElement("div"),
+  currentTime: 0,
+  duration: NaN,
+  paused: true,
+  readyState: 0,
+  muted: false,
+  play: () => Promise.resolve(),
+  pause: () => {
+  },
+  addEventListener: () => {
+  },
+  removeEventListener: () => {
+  },
+  destroy: () => {
   }
 };
 function fmt(s) {

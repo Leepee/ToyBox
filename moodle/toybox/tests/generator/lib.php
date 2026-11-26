@@ -35,7 +35,10 @@ class mod_toybox_generator extends testing_module_generator {
      */
     public function create_instance($record = null, ?array $options = null) {
         $record = (object) (array) $record;
-        $defaults = ['mode' => 'toy', 'videosource' => 'url', 'videourl' => '', 'aspect' => '16:9', 'completionrequired' => 0];
+        $defaults = [
+            'mode' => 'toy', 'videosource' => 'url', 'videourl' => '', 'aspect' => '16:9',
+            'display' => 'page', 'completionrequired' => 0,
+        ];
         foreach ($defaults as $k => $v) {
             if (!isset($record->$k)) {
                 $record->$k = $v;

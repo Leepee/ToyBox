@@ -41,56 +41,14 @@ $PAGE->set_title(format_string($toybox->name));
 $PAGE->set_heading(format_string($course->fullname));
 $PAGE->set_context($context);
 
-$toylist = toys::get_toys($toybox->id);
-$videourl = toys::video_url($toybox, $context);
-$canedit = has_capability('mod/toybox:edittoys', $context);
-$cansubmit = has_capability('mod/toybox:submit', $context, null, false) && !isguestuser();
-
-$completion = new completion_info($course);
-$complete = $completion->is_enabled($cm)
-    && $completion->get_data($cm, false, $USER->id)->completionstate == COMPLETION_COMPLETE;
-
-$config = [
-    'cmid' => (int) $cm->id,
-    'mode' => $toybox->mode,
-    'aspect' => $toybox->aspect,
-    'theme' => get_config('mod_toybox', 'theme') ?: 'auto',
-    'videoUrl' => $videourl,
-    'sdkUrl' => (new moodle_url('/mod/toybox/sdk/toybox-sdk.js'))->out(false),
-    'toys' => toys::export_for_js($toylist),
-    'finished' => toys::finished_toy_ids($toybox->id, $USER->id),
-    'canSubmit' => $cansubmit,
-    'activityComplete' => $complete,
-    'strings' => [
-        'activitycomplete' => get_string('activitycomplete', 'toybox'),
-        'finished' => get_string('finished', 'toybox'),
-        'jumpto' => get_string('jumpto', 'toybox'),
-        'optional' => get_string('optional', 'toybox'),
-        'untitled' => get_string('untitled', 'toybox'),
-        'toysinthisvideo' => get_string('toysinthisvideo', 'toybox'),
-    ],
-];
-
-$notice = null;
-if ($toybox->mode === 'video' && !$videourl) {
-    $notice = get_string('novideo', 'toybox');
-} else if (!$toylist && $toybox->mode === 'toy') {
-    $notice = get_string($canedit ? 'notoyyet_teacher' : 'notoyyet', 'toybox');
-}
-
-$rootid = 'mod-toybox-' . $cm->id;
-if (!$notice) {
-    $PAGE->requires->js_call_amd('mod_toybox/view', 'init', ['#' . $rootid]);
-}
-
 echo $OUTPUT->header();
-echo $OUTPUT->render_from_template('mod_toybox/view', [
-    'rootid' => $rootid,
-    'notice' => $notice,
-    'canedit' => $canedit,
-    'editurl' => (new moodle_url('/mod/toybox/edit.php', ['id' => $cm->id]))->out(false),
-    'notoys' => !$toylist,
-    'istoy' => $toybox->mode === 'toy',
-    'configjson' => json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
-]);
+echo toys::render($toybox, $cm, $context, 'page');
+
+if (has_capability('mod/toybox:edittoys', $context)) {
+    $embedurl = new moodle_url('/mod/toybox/embed.php', ['id' => $cm->id]);
+    $ratio = $toybox->mode === 'toy' && $toybox->aspect !== 'auto' ? str_replace(':', ' / ', $toybox->aspect) : '16 / 10';
+    $iframe = '<iframe src="' . $embedurl->out(false) . '" title="' . s(format_string($toybox->name)) .
+        '" style="width:100%;aspect-ratio:' . $ratio . ';border:0" allow="autoplay; fullscreen" allowfullscreen></iframe>';
+    echo $OUTPUT->render_from_template('mod_toybox/embedcode', ['code' => $iframe]);
+}
 echo $OUTPUT->footer();

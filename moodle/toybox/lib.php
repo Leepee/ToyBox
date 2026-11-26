@@ -60,6 +60,7 @@ function toybox_add_instance(stdClass $data, $mform = null): int {
     $data->timecreated = time();
     $data->timemodified = $data->timecreated;
     $data->completionrequired = empty($data->completionrequired) ? 0 : 1;
+    $data->display = ($data->display ?? 'page') === 'inline' ? 'inline' : 'page';
     $data->id = $DB->insert_record('toybox', $data);
     toybox_save_video($data);
     return $data->id;
@@ -77,6 +78,7 @@ function toybox_update_instance(stdClass $data, $mform = null): bool {
     $data->id = $data->instance;
     $data->timemodified = time();
     $data->completionrequired = empty($data->completionrequired) ? 0 : 1;
+    $data->display = ($data->display ?? 'page') === 'inline' ? 'inline' : 'page';
     $DB->update_record('toybox', $data);
     toybox_save_video($data);
 
@@ -133,7 +135,7 @@ function toybox_get_coursemodule_info($coursemodule) {
     $toybox = $DB->get_record(
         'toybox',
         ['id' => $coursemodule->instance],
-        'id, name, intro, introformat, completionrequired'
+        'id, name, intro, introformat, completionrequired, display'
     );
     if (!$toybox) {
         return false;
@@ -146,7 +148,40 @@ function toybox_get_coursemodule_info($coursemodule) {
     if ($coursemodule->completion == COMPLETION_TRACKING_AUTOMATIC) {
         $info->customdata['customcompletionrules']['completionrequired'] = $toybox->completionrequired;
     }
+    $info->customdata['display'] = $toybox->display;
     return $info;
+}
+
+/**
+ * Toys shown on the course page have no link to a separate page.
+ *
+ * @param cm_info $cm
+ */
+function toybox_cm_info_dynamic(cm_info $cm): void {
+    if (($cm->customdata['display'] ?? 'page') === 'inline') {
+        $cm->set_no_view_link();
+    }
+}
+
+/**
+ * Puts the toy (or video with toys) straight onto the course page.
+ *
+ * @param cm_info $cm
+ */
+function toybox_cm_info_view(cm_info $cm): void {
+    global $DB;
+    if (($cm->customdata['display'] ?? 'page') !== 'inline' || !$cm->uservisible) {
+        return;
+    }
+    $context = context_module::instance($cm->id);
+    if (!has_capability('mod/toybox:view', $context)) {
+        return;
+    }
+    $toybox = $DB->get_record('toybox', ['id' => $cm->instance]);
+    if ($toybox) {
+        // Already-formatted HTML: the player's JSON config must not be filtered or cleaned.
+        $cm->set_content(\mod_toybox\local\toys::render($toybox, $cm, $context, 'inline'), true);
+    }
 }
 
 /**
