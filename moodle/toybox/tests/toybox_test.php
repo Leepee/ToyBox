@@ -19,6 +19,7 @@ namespace mod_toybox;
 use mod_toybox\external\record_result;
 use mod_toybox\external\save_toys;
 use mod_toybox\local\toys;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for saving toys, recording results and completion.
@@ -26,11 +27,15 @@ use mod_toybox\local\toys;
  * @package    mod_toybox
  * @copyright  2026 ToyBox contributors
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers     \mod_toybox\local\toys
+ * @covers     \mod_toybox\external\save_toys
+ * @covers     \mod_toybox\external\record_result
+ * @covers     \mod_toybox\completion\custom_completion
  */
-#[\PHPUnit\Framework\Attributes\CoversClass(toys::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(save_toys::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(record_result::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\mod_toybox\completion\custom_completion::class)]
+#[CoversClass(toys::class)]
+#[CoversClass(save_toys::class)]
+#[CoversClass(record_result::class)]
+#[CoversClass(\mod_toybox\completion\custom_completion::class)]
 final class toybox_test extends \advanced_testcase {
     /**
      * Saving toys inserts, updates and deletes, and keeps results of kept toys.
