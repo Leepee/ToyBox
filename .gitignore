@@ -1,3 +1,7 @@
 node_modules
 dist
 .DS_Store
+# copied from core/ by scripts/sync-core.mjs
+demo/public/toybox-sdk.js
+demo/public/toys/
+demo/public/toybox-toy-guide.md

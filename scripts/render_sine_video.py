@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 W, H, FPS, SS = 1280, 720, 30, 2  # SS = supersampling factor for smooth lines
 DURATION = 95.0
-OUT = Path(__file__).resolve().parent.parent / "public" / "media" / "sine-waves.mp4"
+OUT = Path(__file__).resolve().parent.parent / "demo" / "public" / "media" / "sine-waves.mp4"
 FONT_DIR = Path("/usr/share/fonts/opentype/inter")
 if not FONT_DIR.exists():  # macOS fallback
     FONT_DIR = Path("/Library/Fonts")

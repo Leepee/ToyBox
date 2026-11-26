@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="mod/toybox/db" VERSION="20261126" COMMENT="XMLDB file for Moodle mod/toybox"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="toybox" COMMENT="One row per ToyBox activity">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="course" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="intro" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="introformat" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="mode" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="video" SEQUENCE="false" COMMENT="video = toys over a video; toy = a single toy on its own"/>
+        <FIELD NAME="videosource" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="upload" SEQUENCE="false" COMMENT="upload or url"/>
+        <FIELD NAME="videourl" TYPE="char" LENGTH="1333" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="aspect" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="16:9" SEQUENCE="false" COMMENT="Toy-only box shape: 16:9, 4:3, 1:1, 3:4 or auto"/>
+        <FIELD NAME="completionrequired" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Completion rule: finish all required toys"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="course" TYPE="foreign" FIELDS="course" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="toybox_toy" COMMENT="The toys in an activity (one row in toy-only mode)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="toyboxid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="label" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="html" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="The toy's code. Only ever run inside a sandboxed iframe."/>
+        <FIELD NAME="params" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON settings passed to the toy"/>
+        <FIELD NAME="starttime" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="2"/>
+        <FIELD NAME="endtime" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="2"/>
+        <FIELD NAME="posx" TYPE="number" LENGTH="6" NOTNULL="true" DEFAULT="20" SEQUENCE="false" DECIMALS="2"/>
+        <FIELD NAME="posy" TYPE="number" LENGTH="6" NOTNULL="true" DEFAULT="12" SEQUENCE="false" DECIMALS="2"/>
+        <FIELD NAME="width" TYPE="number" LENGTH="6" NOTNULL="true" DEFAULT="60" SEQUENCE="false" DECIMALS="2"/>
+        <FIELD NAME="height" TYPE="number" LENGTH="6" NOTNULL="true" DEFAULT="62" SEQUENCE="false" DECIMALS="2"/>
+        <FIELD NAME="pausevideo" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="resumeoncomplete" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="required" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="Counts towards the completion rule"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="toyboxid" TYPE="foreign" FIELDS="toyboxid" REFTABLE="toybox" REFFIELDS="id"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="toybox_result" COMMENT="A learner's latest result for each toy">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="toyboxid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="toyid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="result" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON reported by the toy via ToyBox.complete()"/>
+        <FIELD NAME="attempts" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="toyboxid" TYPE="foreign" FIELDS="toyboxid" REFTABLE="toybox" REFFIELDS="id"/>
+        <KEY NAME="toyid" TYPE="foreign" FIELDS="toyid" REFTABLE="toybox_toy" REFFIELDS="id"/>
+        <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="toyuser" UNIQUE="true" FIELDS="toyid, userid"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>

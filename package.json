@@ -4,11 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "sync": "node scripts/sync-core.mjs",
+    "dev": "node scripts/sync-core.mjs demo && vite",
+    "build": "node scripts/sync-core.mjs demo && tsc --noEmit && vite build",
+    "build:moodle": "node scripts/sync-core.mjs moodle && node scripts/build-moodle.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "typescript": "^5.6.3",
     "vite": "^6.0.0"
   }

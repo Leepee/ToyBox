@@ -5,13 +5,37 @@ A web video player where **educators drop interactive "toys" on top of the video
 - **Player** (`index.html`): plays a *lesson* (a video plus a list of timed toys), pauses for the toys that need an answer, and tracks which toys the learner has completed.
 - **Toy playground** (`playground.html`): write a toy's HTML on the left and see it running over the video on the right. When it works, copy the cue JSON into a lesson.
 
+## What's in this repo
+
+```
+core/            shared by everything: the player, the sandbox, the ToyBox SDK, example toys,
+  src/           and the AI toy-maker guide (core/guide/toybox-toy-guide.md)
+  public/
+  guide/
+demo/            the GitHub Pages demo site (lesson player, toy-only page, playground)
+moodle/
+  src/           TypeScript for the Moodle pages (student view + toy editor)
+  toybox/        the Moodle activity plugin (mod_toybox): see moodle/toybox/README.md
+scripts/         build helpers and the sine-wave video renderer
+```
+
 ## Run it (Mac)
 
 ```bash
 brew install node        # once
 npm install              # once
-npm run dev              # then open http://localhost:5173
+npm run dev              # demo site at http://localhost:5173
+npm run build:moodle     # rebuild the Moodle plugin's JS/CSS after changing core/ or moodle/src/
 ```
+
+## Two ways to use a toy
+
+- **On a video:** the toy appears at a set moment, in a box over part of the video. It can pause the video, seek it, and resume it when finished.
+- **Toy only:** the toy stands alone on a page, as a fixed shape (16:9, 4:3, square, 3:4) or sized to fit its content. `ToyBox.hasVideo` is `false`, so toys can hide video-only buttons.
+
+## Making toys with AI
+
+`core/guide/toybox-toy-guide.md` is written for AI assistants. It covers the rules, the SDK, both modes, design advice, a complete worked example and a reply checklist. In the playground and the Moodle editor, **Copy AI prompt** puts the guide plus this toy's details on the clipboard; paste it into any AI chat. The **Checker** then explains anything in the AI's code that won't work (network calls, `alert()`, storage, missing `ToyBox.complete()`…).
 
 ## How it fits together
 
@@ -23,7 +47,7 @@ lesson.json ──► Player ──► <video>
 ```
 
 ### A lesson
-`public/lessons/fractions.json`:
+`demo/public/lessons/fractions.json`:
 
 ```json
 {
@@ -53,7 +77,7 @@ lesson.json ──► Player ──► <video>
 Load another lesson with `?lesson=lessons/your-lesson.json`.
 
 ### A toy
-A toy is a plain HTML file (`public/toys/`) that includes the SDK:
+A toy is a plain HTML file (`core/public/toys/`) that includes the SDK:
 
 ```html
 <script src="../toybox-sdk.js"></script>
@@ -88,15 +112,17 @@ The live demo is deployed to GitHub Pages by `.github/workflows/pages.yml` on ev
 
 | File | What it does |
 |---|---|
-| `src/player.ts` | Video, controls, timeline markers, and syncing toys to frames (`requestVideoFrameCallback`) |
-| `src/toyHost.ts` | Creates the sandboxed iframes and handles the message protocol |
-| `src/types.ts` | Lesson, cue and message types |
-| `public/toybox-sdk.js` | The `ToyBox` API that toys use |
-| `src/main.ts`, `src/playground.ts` | The two pages |
+| `core/src/player.ts` | Video, controls, timeline markers, and syncing toys to frames (`requestVideoFrameCallback`) |
+| `core/src/standalone.ts` | A single toy on its own (toy-only mode) |
+| `core/src/toyHost.ts` | Creates the sandboxed iframes, adds the no-network CSP, and handles the message protocol |
+| `core/src/lint.ts`, `core/src/aiPrompt.ts` | The toy checker and the AI prompt builder |
+| `core/public/toybox-sdk.js` | The `ToyBox` API that toys use |
+| `demo/src/*.ts` | The demo pages |
+| `moodle/src/*.ts` | The Moodle student view and toy editor |
 
 ## Roadmap ideas
-- Drag-to-position and timeline editing in the playground; save lessons
-- Save learner results to a backend (`onComplete` is the hook for this)
-- HLS/adaptive streaming via `hls.js`, and YouTube/Vimeo as video sources
+- Drag-to-position toys on the video preview
+- YouTube/Vimeo as video sources
+- HLS/adaptive streaming via `hls.js`
 - Toy library and gallery; shared toy styles/theme
 - Accessibility pass: captions, keyboard focus moving into a toy when it pauses the video

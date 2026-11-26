@@ -1,0 +1,106 @@
+import Ajax from 'core/ajax';
+import Notification from 'core/notification';
+import { add as addToast } from 'core/toast';
+import { ToyBoxPlayer, fmt } from '../../core/src/player';
+import { StandaloneToy } from '../../core/src/standalone';
+import { el, fromServer, readConfig, type Aspect, type MoodleToy } from './shared';
+
+interface ViewConfig {
+  cmid: number;
+  mode: 'video' | 'toy';
+  aspect: Aspect;
+  videoUrl: string | null;
+  sdkUrl: string;
+  toys: any[];
+  finished: number[];
+  canSubmit: boolean;
+  activityComplete: boolean;
+  strings: Record<string, string>;
+}
+
+/**
+ * The student view: plays the video with its toys, or shows the single toy,
+ * and saves each finished toy so Moodle completion can tick over.
+ */
+export const init = (selector: string) => {
+  const root = document.querySelector(selector);
+  if (!root) return;
+  const cfg = readConfig<ViewConfig>(root);
+  const toys = fromServer(cfg.toys);
+  const finished = new Set(cfg.finished.map(String));
+  let activityComplete = cfg.activityComplete;
+  const mount = root.querySelector<HTMLElement>('.mod-toybox-stage')!;
+
+  const save = (toyId: string, result: unknown) => {
+    if (!cfg.canSubmit || !/^\d+$/.test(toyId)) return;
+    // Moodle's Ajax returns jQuery promises; wrap them to get a native Promise.
+    Promise.resolve(
+      Ajax.call([
+        {
+          methodname: 'mod_toybox_record_result',
+          args: { cmid: cfg.cmid, toyid: Number(toyId), result: JSON.stringify(result ?? null) },
+        },
+      ])[0],
+    )
+      .then((r: { activitycomplete: boolean }) => {
+        if (r.activitycomplete && !activityComplete) {
+          activityComplete = true;
+          addToast(cfg.strings.activitycomplete, { type: 'success' });
+        }
+      })
+      .catch(Notification.exception);
+  };
+
+  if (cfg.mode === 'toy') {
+    const toy = toys[0];
+    if (!toy) return;
+    const status = el<'p'>('p.mod-toybox-status', { 'aria-live': 'polite' });
+    const host = new StandaloneToy(mount, {
+      sdkUrl: cfg.sdkUrl,
+      aspect: cfg.aspect,
+      onComplete: (rec) => {
+        finished.add(toy.id);
+        status.textContent = '✓ ' + cfg.strings.finished;
+        save(toy.id, rec.result);
+      },
+    });
+    host.show(toy, cfg.aspect);
+    if (finished.has(toy.id)) status.textContent = '✓ ' + cfg.strings.finished;
+    root.append(status);
+    return;
+  }
+
+  // ---- video with toys
+  if (!cfg.videoUrl) return;
+  const list = el<'ul'>('ul.mod-toybox-progress');
+  const renderList = () => {
+    list.replaceChildren(
+      ...toys.map((t: MoodleToy) =>
+        el(
+          'li',
+          { class: finished.has(t.id) ? 'done' : '' },
+          el(
+            'button',
+            { type: 'button', onclick: () => player.seek(t.start), title: cfg.strings.jumpto },
+            el('span.t', { text: fmt(t.start) }),
+            t.label || cfg.strings.untitled,
+            t.required ? null : el('span.opt', { text: cfg.strings.optional }),
+          ),
+        ),
+      ),
+    );
+  };
+  const player = new ToyBoxPlayer(mount, {
+    sdkUrl: cfg.sdkUrl,
+    onComplete: (rec) => {
+      finished.add(rec.cueId);
+      renderList();
+      save(rec.cueId, rec.result);
+    },
+  });
+  player.setLesson({ title: '', video: cfg.videoUrl, cues: toys }, location.href);
+  if (toys.length) {
+    root.append(el('h3.mod-toybox-progress-title', { text: cfg.strings.toysinthisvideo }), list);
+    renderList();
+  }
+};

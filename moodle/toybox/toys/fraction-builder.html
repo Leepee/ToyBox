@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fraction builder</title>
+  <script src="../toybox-sdk.js"></script>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #0f172a; }
+    html, body { margin: 0; height: 100%; background: transparent; }
+    .card {
+      box-sizing: border-box; height: 100%; padding: 4% 5%;
+      background: #fff; border-radius: 16px; box-shadow: 0 10px 30px #0006;
+      display: flex; flex-direction: column; gap: 4%; justify-content: center;
+    }
+    h1 { font-size: clamp(14px, 4.5vw, 26px); margin: 0; }
+    .bar { display: flex; gap: 4px; height: 26%; }
+    .bar button {
+      flex: 1; border: 2px solid #1e3a8a; border-radius: 8px; background: #e0e7ff;
+      cursor: pointer; transition: background .15s, transform .1s;
+    }
+    .bar button[aria-pressed="true"] { background: #f59e0b; border-color: #b45309; }
+    .bar button:active { transform: scale(.96); }
+    .row { display: flex; align-items: center; gap: 12px; }
+    .frac { font-size: clamp(16px, 5vw, 30px); font-weight: 700; min-width: 3em; }
+    .check { padding: .5em 1.2em; font-size: clamp(12px, 3vw, 18px); border: 0; border-radius: 999px; background: #1e3a8a; color: #fff; cursor: pointer; }
+    .msg { font-size: clamp(12px, 3.2vw, 18px); min-height: 1.4em; }
+    .ok { color: #15803d; } .no { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="prompt">Shade the bar</h1>
+    <div class="bar" id="bar"></div>
+    <div class="row">
+      <span class="frac" id="frac">0/4</span>
+      <button class="check" id="check">Check</button>
+      <span class="msg" id="msg" aria-live="polite"></span>
+    </div>
+  </div>
+  <script>
+    ToyBox.defaults({ numerator: 3, denominator: 4 }); // used when opened on its own
+
+    ToyBox.onInit(function (p) {
+      var n = p.numerator, d = p.denominator, attempts = 0;
+      var bar = document.getElementById('bar');
+      var frac = document.getElementById('frac');
+      var msg = document.getElementById('msg');
+      document.getElementById('prompt').textContent = p.prompt || ('Shade ' + n + '/' + d + ' of the bar');
+
+      bar.innerHTML = '';
+      for (var i = 0; i < d; i++) {
+        var b = document.createElement('button');
+        b.setAttribute('aria-pressed', 'false');
+        b.setAttribute('aria-label', 'Part ' + (i + 1) + ' of ' + d);
+        b.onclick = function () {
+          this.setAttribute('aria-pressed', this.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+          update();
+        };
+        bar.appendChild(b);
+      }
+      function shaded() { return bar.querySelectorAll('[aria-pressed="true"]').length; }
+      function update() { frac.textContent = shaded() + '/' + d; msg.textContent = ''; }
+      update();
+
+      document.getElementById('check').onclick = function () {
+        attempts++;
+        if (shaded() === n) {
+          msg.className = 'msg ok';
+          msg.textContent = 'Yes! ' + n + ' of ' + d + ' equal parts.';
+          setTimeout(function () { ToyBox.complete({ correct: true, attempts: attempts }); }, 900);
+        } else {
+          msg.className = 'msg no';
+          msg.textContent = shaded() < n ? 'Shade a few more…' : 'Too many — try fewer.';
+        }
+      };
+    });
+  </script>
+</body>
+</html>

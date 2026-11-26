@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ToyBox Toy Only</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header class="app">
+    <h1>🧸 ToyBox</h1>
+    <span class="sub">Toy only: no video, just the toy on a page</span>
+    <nav><a href="./">Player</a><a href="./toy.html">Toy only</a><a href="./playground.html?mode=toy">Toy playground</a></nav>
+  </header>
+  <main class="toy-page">
+    <div class="toolbar">
+      <select class="btn" id="pick" aria-label="Choose a toy"></select>
+      <select class="btn" id="shape" aria-label="Shape">
+        <option value="16:9">16:9 (wide)</option>
+        <option value="4:3">4:3</option>
+        <option value="1:1">Square</option>
+        <option value="auto">Fit content</option>
+      </select>
+    </div>
+    <article class="panel">
+      <h2 id="topic">Week 3 · Waves</h2>
+      <p class="intro" id="intro"></p>
+    </article>
+    <div id="toy"></div>
+    <article class="panel">
+      <h2>Progress</h2>
+      <p class="intro" id="status">Not finished yet.</p>
+    </article>
+  </main>
+  <script type="module" src="/src/toy.ts"></script>
+</body>
+</html>

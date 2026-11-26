@@ -1,0 +1,107 @@
+name: Moodle plugin
+
+# Tests the plugin on Moodle 4.4 (the oldest supported), 4.5 LTS and the newest
+# stable release, and builds an installable zip (download it from the run's
+# "Artifacts"). Tagging vX.Y.Z also attaches the zip to a GitHub release.
+on:
+  push:
+    paths: ['moodle/**', 'core/**', 'scripts/build-moodle.mjs', 'scripts/sync-core.mjs', '.github/workflows/moodle-plugin.yml']
+    tags: ['v*']
+  pull_request:
+    paths: ['moodle/**', 'core/**']
+  workflow_dispatch:
+
+jobs:
+  generated-files:
+    name: Built JS/CSS are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:moodle
+      - name: Fail if the committed plugin files differ from a fresh build
+        run: git diff --exit-code -- moodle/toybox || (echo "::error::Run 'npm run build:moodle' and commit the result." && exit 1)
+
+  test:
+    name: Moodle ${{ matrix.moodle }} · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { moodle: MOODLE_404_STABLE, php: '8.1', pg: 13 }
+          - { moodle: MOODLE_405_STABLE, php: '8.2', pg: 14 }
+          - { moodle: MOODLE_503_STABLE, php: '8.3', pg: 17 }
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: plugin
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pgsql, zip, gd, xmlrpc, soap, intl, sodium
+          ini-values: max_input_vars=5000
+          coverage: none
+      - name: Install moodle-plugin-ci
+        run: |
+          composer create-project -n --no-dev --prefer-dist moodlehq/moodle-plugin-ci ci ^4
+          echo $(cd ci/bin; pwd) >> $GITHUB_PATH
+          echo $(cd ci/vendor/bin; pwd) >> $GITHUB_PATH
+          sudo locale-gen en_AU.UTF-8
+      - name: Install Moodle with the plugin
+        run: moodle-plugin-ci install --plugin ./plugin/moodle/toybox --db-host=127.0.0.1 --no-init
+        env:
+          DB: pgsql
+          MOODLE_BRANCH: ${{ matrix.moodle }}
+      - run: moodle-plugin-ci phplint
+      - run: moodle-plugin-ci phpcs --max-warnings 0
+        if: ${{ !cancelled() }}
+      - run: moodle-plugin-ci phpdoc --max-warnings 0
+        if: ${{ !cancelled() }}
+      - run: moodle-plugin-ci validate
+        if: ${{ !cancelled() }}
+      - run: moodle-plugin-ci savepoints
+        if: ${{ !cancelled() }}
+      - run: moodle-plugin-ci mustache
+        if: ${{ !cancelled() }}
+      - name: PHPUnit
+        if: ${{ !cancelled() }}
+        run: |
+          moodle-plugin-ci phpunit --fail-on-warning
+        env:
+          MOODLE_BRANCH: ${{ matrix.moodle }}
+      # The JavaScript is built by scripts/build-moodle.mjs (checked above), not Moodle's grunt.
+
+  package:
+    name: Build installable zip
+    needs: [generated-files]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip the plugin (Moodle expects a zip with a single "toybox" folder)
+        run: |
+          cd moodle
+          zip -r ../mod_toybox.zip toybox
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mod_toybox
+          path: mod_toybox.zip
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mod_toybox.zip

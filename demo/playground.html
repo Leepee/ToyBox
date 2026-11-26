@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Toy Playground</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header class="app">
+    <h1>🧸 ToyBox</h1>
+    <span class="sub">Toy playground: write a toy (or have an AI write it) and see it live</span>
+    <nav><a href="./">Player</a><a href="./toy.html">Toy only</a><a href="./playground.html">Toy playground</a></nav>
+  </header>
+  <main class="playground">
+    <section class="editor">
+      <div class="toolbar">
+        <div class="seg" role="radiogroup" aria-label="Toy mode">
+          <label><input type="radio" name="mode" value="video" checked /> On a video</label>
+          <label><input type="radio" name="mode" value="toy" /> Toy only</label>
+        </div>
+        <select class="btn" id="example" aria-label="Start from an example">
+          <option value="">Start from…</option>
+          <option value="starter">Blank starter (number line)</option>
+          <option value="toys/wave-lab.html">Wave Lab</option>
+          <option value="toys/phase-lab.html">Phase Lab</option>
+          <option value="toys/fourier-lab.html">Fourier Lab</option>
+          <option value="toys/fraction-builder.html">Fraction builder</option>
+          <option value="toys/quiz.html">Quiz</option>
+          <option value="toys/fact-card.html">Fact card</option>
+        </select>
+      </div>
+      <div class="toolbar ai">
+        <span>✨ <strong>Make it with AI:</strong></span>
+        <button class="btn" id="ai-copy" title="Copies the toy guide plus this toy's details. Paste into ChatGPT, Claude, Gemini…">Copy AI prompt</button>
+        <a class="btn" id="guide-dl" href="toybox-toy-guide.md" download>Download toy guide</a>
+      </div>
+      <div>
+        <label for="toy-html">Toy HTML <span class="muted">(paste the AI's HTML here)</span></label>
+        <textarea id="toy-html" spellcheck="false" wrap="off"></textarea>
+      </div>
+      <div>
+        <label for="toy-params">Settings / params (JSON passed to <code>ToyBox.onInit</code>)</label>
+        <textarea id="toy-params" spellcheck="false">{}</textarea>
+      </div>
+      <div class="fields video-only">
+        <div><label for="f-start">Start (s)</label><input id="f-start" type="number" step="0.5" value="3" /></div>
+        <div><label for="f-end">End (s)</label><input id="f-end" type="number" step="0.5" value="5" /></div>
+        <div><label for="f-x">X %</label><input id="f-x" type="number" value="20" /></div>
+        <div><label for="f-y">Y %</label><input id="f-y" type="number" value="12" /></div>
+        <div><label for="f-w">W %</label><input id="f-w" type="number" value="60" /></div>
+        <div><label for="f-h">H %</label><input id="f-h" type="number" value="62" /></div>
+      </div>
+      <div class="toolbar video-only">
+        <label style="margin:0"><input type="checkbox" id="f-pause" checked /> Pause video when toy appears</label>
+        <label style="margin:0"><input type="checkbox" id="f-resume" checked /> Resume on complete</label>
+      </div>
+      <div class="toolbar toy-only" hidden>
+        <label for="f-aspect" style="margin:0">Shape</label>
+        <select class="btn" id="f-aspect">
+          <option value="16:9">16:9 (wide)</option>
+          <option value="4:3">4:3</option>
+          <option value="1:1">Square</option>
+          <option value="3:4">3:4 (tall)</option>
+          <option value="auto">Fit content</option>
+        </select>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" id="apply">Run (⌘↵)</button>
+        <button class="btn video-only" id="copy">Copy cue JSON</button>
+      </div>
+      <div class="err" id="err"></div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:12px">
+      <div id="player"></div>
+      <div id="standalone" hidden></div>
+      <div class="panel">
+        <h2>Checker</h2>
+        <ul class="lint" id="lint"></ul>
+      </div>
+      <div class="panel">
+        <h2>Messages from your toy</h2>
+        <pre class="out" id="out">Press "Run". On a video, the player jumps to your toy's start time.</pre>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/src/playground.ts"></script>
+</body>
+</html>

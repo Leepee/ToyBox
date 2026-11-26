@@ -1,0 +1,33 @@
+{{!
+    This file is part of Moodle - https://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_toybox/editor
+
+    The toy editor shell. The editor itself is built by mod_toybox/editor.
+
+    Example context (json):
+    {
+        "rootid": "mod-toybox-editor-1",
+        "intro": "Write a toy, or ask an AI to write one.",
+        "viewurl": "https://example.com/mod/toybox/view.php?id=1",
+        "configjson": "{}"
+    }
+}}
+<p class="mod-toybox-editorintro">{{intro}} <a href="{{viewurl}}">{{#str}} backtoactivity, mod_toybox {{/str}}</a></p>
+<div id="{{rootid}}" class="mod-toybox-editroot">
+    <script type="application/json" class="mod-toybox-config">{{{configjson}}}</script>
+</div>

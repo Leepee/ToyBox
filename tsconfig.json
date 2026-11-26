@@ -8,5 +8,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": ["core/src", "demo/src", "moodle/src"]
 }
