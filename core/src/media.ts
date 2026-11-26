@@ -6,12 +6,13 @@
  *   - FileMedia:    an <video> element (mp4/webm, uploaded or linked)
  *   - YouTubeMedia: YouTube's IFrame Player API (privacy-enhanced youtube-nocookie.com)
  *   - VimeoMedia:   Vimeo's Player.js API (do-not-track)
+ *   - PanoptoMedia: Panopto's Embed API (viewers need access to the Panopto session)
  *
  * YouTube and Vimeo only report the time a few times a second, so EmbedMedia
  * interpolates between reports with the wall clock while playing.
  */
 
-export type MediaKind = 'file' | 'youtube' | 'vimeo';
+export type MediaKind = 'file' | 'youtube' | 'vimeo' | 'panopto';
 
 export interface PlayerMedia {
   readonly kind: MediaKind;
@@ -33,6 +34,7 @@ export interface PlayerMedia {
 export type ParsedVideo =
   | { kind: 'youtube'; id: string; start?: number }
   | { kind: 'vimeo'; id: string; hash?: string }
+  | { kind: 'panopto'; server: string; id: string }
   | { kind: 'file'; url: string };
 
 /** Works out what kind of video a URL points to. */
@@ -62,6 +64,11 @@ export function parseVideoUrl(url: string): ParsedVideo {
       return { kind: 'vimeo', id: m[1], ...(hash ? { hash } : {}) };
     }
   }
+  // Panopto: https://<server>/Panopto/Pages/Viewer.aspx?id=<guid> (or Embed.aspx)
+  const pid = u.searchParams.get('id');
+  if (/\/Panopto\/Pages\/(Viewer|Embed)\.aspx$/i.test(u.pathname) && pid && /^[0-9a-f-]{36}$/i.test(pid)) {
+    return { kind: 'panopto', server: u.host, id: pid };
+  }
   return { kind: 'file', url: u.href };
 }
 
@@ -76,6 +83,7 @@ export function createMedia(url: string): PlayerMedia {
   const v = parseVideoUrl(url);
   if (v.kind === 'youtube') return new YouTubeMedia(v.id);
   if (v.kind === 'vimeo') return new VimeoMedia(v.id, v.hash);
+  if (v.kind === 'panopto') return new PanoptoMedia(v.server, v.id);
   return new FileMedia(v.url);
 }
 
@@ -470,6 +478,117 @@ export class VimeoMedia extends EmbedMedia {
   }
   destroy() {
     this.vp?.destroy().catch(() => {});
+    super.destroy();
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+let panoptoCount = 0;
+
+/**
+ * A Panopto session, controlled through Panopto's Embed API. The API reports
+ * time only when the player sends a state update, so the clock interpolates
+ * between updates (and ignores repeats of a stale value).
+ */
+export class PanoptoMedia extends EmbedMedia {
+  readonly kind = 'panopto' as const;
+  private api: any = null;
+  private poll = 0;
+  private lastReported = -1;
+  private pending: (() => void)[] = [];
+
+  constructor(
+    readonly server: string,
+    readonly sessionId: string,
+  ) {
+    super();
+    // EmbedApi finds its container by id.
+    this.target.id = `tb-panopto-${++panoptoCount}`;
+    loadScript('https://developers.panopto.com/scripts/embedapi.min.js')
+      .then(() => {
+        const EmbedApi = (window as any).EmbedApi;
+        this.api = new EmbedApi(this.target.id, {
+          width: '100%',
+          height: '100%',
+          serverName: server,
+          sessionId,
+          videoParams: {
+            // Keep Panopto's own UI out of the way: ToyBox draws the controls.
+            interactivity: 'none',
+            showtitle: 'false',
+            showbrand: 'false',
+            offerviewer: 'false',
+            autoplay: 'false',
+          },
+          events: {
+            onIframeReady: () => this.api.loadVideo(),
+            onReady: () => {
+              this.setDuration(this.api.getDuration());
+              this.markReady();
+              for (const fn of this.pending.splice(0)) fn();
+            },
+            onStateChange: (state: number) => this.onState(state),
+            onLoginShown: () => this.emit('login'),
+            onError: () => this.emit('error'),
+          },
+        });
+      })
+      .catch(() => this.emit('error'));
+  }
+
+  private call(fn: () => void) {
+    if (this.ready) fn();
+    else this.pending.push(fn);
+  }
+
+  /** Take Panopto's time only when it has actually changed (and isn't the pre-seek value). */
+  private sync() {
+    const t = this.api?.getCurrentTime?.();
+    if (typeof t === 'number' && t !== this.lastReported) {
+      this.lastReported = t;
+      this.report(t);
+    }
+    this.setDuration(this.api?.getDuration?.() ?? NaN);
+  }
+
+  private onState(state: number) {
+    // PlayerState: 0 ended, 1 playing, 2 paused
+    this.sync();
+    if (state === 1) {
+      this.setPlaying(true);
+      if (!this.poll) {
+        this.poll = window.setInterval(() => {
+          this.sync();
+          this.emit('timeupdate');
+        }, 250);
+      }
+    } else {
+      this.setPlaying(false);
+      clearInterval(this.poll);
+      this.poll = 0;
+      if (state === 0) this.emit('ended');
+    }
+  }
+
+  protected seekTo(t: number) {
+    this.call(() => {
+      this.api.seekTo(t);
+      this.lastReported = -1;
+      setTimeout(() => this.emit('seeked'), 200);
+    });
+  }
+  protected doPlay() {
+    this.call(() => this.api.playVideo());
+  }
+  protected doPause() {
+    this.call(() => this.api.pauseVideo());
+  }
+  protected setMuted(m: boolean) {
+    this.call(() => (m ? this.api.muteVideo() : this.api.unmuteVideo()));
+  }
+  destroy() {
+    clearInterval(this.poll);
     super.destroy();
   }
 }

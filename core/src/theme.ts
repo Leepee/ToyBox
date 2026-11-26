@@ -212,11 +212,130 @@ export function toHex(c: string): string {
   return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
 }
 
+/** Colours and fonts a host gathered from its site (Moodle page styles, WordPress theme.json…). */
+export interface SiteTokens {
+  name?: string;
+  font?: string;
+  fontFaces?: FontFace[];
+  text?: string;
+  background?: string;
+  /** Main button colour (and its text colour, if known). */
+  primary?: string;
+  onPrimary?: string;
+  link?: string;
+  /** The site's brand/accent colours, most important first. */
+  accents?: string[];
+  success?: string;
+  warning?: string;
+  danger?: string;
+  muted?: string;
+  border?: string;
+  surfaceAlt?: string;
+  radius?: string;
+  buttonRadius?: string;
+  band?: string;
+}
+
+/** #rgb / #rrggbb / rgb() → [r, g, b] (0–255), or null. */
+function rgbOf(c: string): [number, number, number] | null {
+  const h = toHex(c);
+  let m = h.match(/^#([0-9a-f]{3})$/i);
+  if (m) return [0, 1, 2].map((i) => parseInt(m![1][i] + m![1][i], 16)) as [number, number, number];
+  m = h.match(/^#([0-9a-f]{6})/i);
+  return m ? ([0, 2, 4].map((i) => parseInt(m![1].slice(i, i + 2), 16)) as [number, number, number]) : null;
+}
+function luminance(c: string): number {
+  const rgb = rgbOf(c);
+  if (!rgb) return 1;
+  const [r, g, b] = rgb.map((v) => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+/** WCAG contrast ratio between two colours (1–21). */
+export function contrast(a: string, b: string): number {
+  const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+/** Straight-line distance between two colours in RGB (0–441). */
+function colourDistance(a: string, b: string): number {
+  const x = rgbOf(a), y = rgbOf(b);
+  if (!x || !y) return 999;
+  return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+}
+const usable = (c?: string) => !!c && !/^transparent$|rgba\([^)]*,\s*0\)$/i.test(c.trim()) && !!rgbOf(c);
+
+/**
+ * Builds a full theme from a site's colours, making sure everything stays readable:
+ * colours too faint against the toy's background (e.g. a pale yellow accent on
+ * white) are swapped for readable ones.
+ */
+export function themeFromTokens(t: SiteTokens, base: Theme = THEMES.solent): Theme {
+  const surface = usable(t.background) ? toHex(t.background!) : '#ffffff';
+  const dark = luminance(surface) < 0.35;
+  const fallback = dark ? THEMES.toybox : THEMES.solent;
+  const pick = (c: string | undefined, min: number, alt: string) => (usable(c) && contrast(toHex(c!), surface) >= min ? toHex(c!) : alt);
+  const text = pick(t.text, 4.5, dark ? '#f1f5f9' : '#1d2125');
+  const primary = usable(t.primary) ? toHex(t.primary!) : fallback.primary;
+  const onPrimary =
+    usable(t.onPrimary) && contrast(toHex(t.onPrimary!), primary) >= 4.5
+      ? toHex(t.onPrimary!)
+      : contrast('#ffffff', primary) >= contrast('#111111', primary)
+        ? '#ffffff'
+        : '#111111';
+  const link = pick(t.link, 4.5, pick(primary, 4.5, text));
+  const danger = pick(t.danger, 3, fallback.danger);
+  const success = pick(t.success, 3, fallback.success);
+  const warning = pick(t.warning, 3, fallback.warning);
+  // Data colours: the site's own (readable ones only), then the fallback theme's.
+  const palette: string[] = [];
+  for (const c of [...(t.accents ?? []), primary, link, danger, success, ...fallback.palette, ...base.palette]) {
+    if (!usable(c)) continue;
+    const hex = toHex(c);
+    if (contrast(hex, surface) < 3) continue;
+    if (palette.some((p) => colourDistance(p, hex) < 60)) continue; // too similar to one we have
+    if (palette.length < 6) palette.push(hex);
+  }
+  // Always six data colours (toys may use --tb-c1 … --tb-c6).
+  for (let i = 0; palette.length < 6 && i < 12; i++) palette.push(palette[i % Math.max(1, palette.length)] ?? text);
+  const accent = palette.find((c) => c.toLowerCase() !== primary.toLowerCase()) ?? danger;
+  const family = (t.font ?? '').split(',')[0].replace(/["']/g, '').trim();
+  return {
+    id: 'site',
+    name: t.name ?? 'This site',
+    mode: dark ? 'dark' : 'light',
+    font: t.font || fallback.font,
+    fontFaces: t.fontFaces ?? [],
+    page: dark ? '#0b0f17' : '#e9ecef',
+    surface,
+    surfaceAlt: usable(t.surfaceAlt) ? toHex(t.surfaceAlt!) : dark ? '#111827' : '#f8f9fa',
+    text,
+    muted: pick(t.muted, 4.5, dark ? '#94a3b8' : '#5f6670'),
+    border: usable(t.border) ? toHex(t.border!) : dark ? 'rgba(255, 255, 255, 0.15)' : '#dee2e6',
+    grid: dark ? '#1f2937' : '#e9ecef',
+    primary,
+    onPrimary,
+    accent,
+    link,
+    success,
+    warning,
+    danger,
+    palette,
+    radius: t.radius || '8px',
+    buttonRadius: t.buttonRadius || t.radius || '6px',
+    shadow: dark ? '0 8px 30px rgba(0, 0, 0, 0.5)' : '0 2px 8px rgba(0, 0, 0, 0.15)',
+    band: usable(t.band) ? toHex(t.band!) : dark ? '#111827' : '#343a40',
+    onBand: '#ffffff',
+    promptNotes: `Match this site's look: font ${family || 'the system font'}, main buttons ${primary} with ${onPrimary} text, text ${text} on ${surface}, links ${link}, brand highlight ${accent}. Clean cards with rounded corners. Use the highlight colour sparingly.`,
+  };
+}
+
 /**
  * Builds a theme from the page it's running in (e.g. a Moodle site's theme),
  * reading Bootstrap's CSS variables and computed styles.
  */
-export function themeFromPage(base: Theme = THEMES.toybox): Theme {
+export function themeFromPage(base: Theme = THEMES.solent): Theme {
   const root = getComputedStyle(document.documentElement);
   const body = getComputedStyle(document.body);
   const v = (...names: string[]) => names.map((n) => root.getPropertyValue(n).trim()).find(Boolean) ?? '';
@@ -231,7 +350,6 @@ export function themeFromPage(base: Theme = THEMES.toybox): Theme {
     el.remove();
     return out;
   };
-  const primary = toHex(v('--bs-primary', '--primary') || probe('btn btn-primary', 'background-color') || base.primary);
   const family = body.fontFamily.split(',')[0].replace(/["']/g, '').trim();
   const faces: FontFace[] = [];
   for (const sheet of Array.from(document.styleSheets)) {
@@ -251,46 +369,30 @@ export function themeFromPage(base: Theme = THEMES.toybox): Theme {
       }
     }
   }
-  const text = toHex(body.color || base.text);
-  const pageBg = body.backgroundColor && body.backgroundColor !== 'rgba(0, 0, 0, 0)' ? body.backgroundColor : '#ffffff';
-  const success = toHex(v('--bs-success', '--success') || base.success);
-  const info = toHex(v('--bs-info', '--info') || base.link);
-  const danger = toHex(v('--bs-danger', '--danger') || base.danger);
-  const warning = toHex(v('--bs-warning', '--warning') || base.warning);
-  const link = toHex(probe('a.', 'color') || primary);
-  // Distinct data colours: the site's own first, then the base theme's to fill any gaps.
-  const palette: string[] = [];
-  for (const c of [primary, danger, success, info, warning, link, ...base.palette].map(toHex)) {
-    if (!palette.some((p) => p.toLowerCase() === c.toLowerCase()) && palette.length < 6) palette.push(c);
-  }
-  return {
-    id: 'site',
-    name: 'This site',
-    mode: 'light',
-    font: body.fontFamily || base.font,
-    fontFaces: faces,
-    page: v('--bs-gray-200', '--gray-200') || '#e9ecef',
-    surface: toHex(pageBg),
-    surfaceAlt: v('--bs-light', '--light') || '#f8f9fa',
-    text,
-    muted: v('--bs-secondary-color', '--bs-gray-600', '--gray-600') || '#6c757d',
-    border: v('--bs-border-color', '--gray-300') || '#dee2e6',
-    grid: v('--bs-gray-200', '--gray-200') || '#e9ecef',
-    primary,
-    onPrimary: toHex(probe('btn btn-primary', 'color') || '#ffffff'),
-    accent: danger,
-    link,
-    success,
-    warning,
-    danger,
-    palette,
-    radius: v('--bs-border-radius-lg', '--bs-border-radius') || '8px',
-    buttonRadius: v('--bs-border-radius') || '6px',
-    shadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-    band: v('--bs-dark', '--dark') || '#343a40',
-    onBand: '#ffffff',
-    promptNotes: `Match this learning site: font ${family || 'system'}, buttons in ${primary} with ${'white'} text, text ${text}, links ${link}. Light, clean cards with rounded corners. Use the brand colour sparingly for highlights.`,
-  };
+  const bodyBg = body.backgroundColor;
+  return themeFromTokens(
+    {
+      font: body.fontFamily,
+      fontFaces: faces,
+      text: body.color,
+      background: usable(bodyBg) ? bodyBg : '#ffffff',
+      // Bootstrap (Moodle) first, then WordPress block-theme presets.
+      primary: v('--bs-primary', '--primary', '--wp--preset--color--primary') || probe('btn btn-primary', 'background-color'),
+      onPrimary: probe('btn btn-primary', 'color'),
+      link: probe('a.', 'color'),
+      accents: [v('--bs-primary', '--primary'), v('--bs-info', '--info')].filter(Boolean),
+      success: v('--bs-success', '--success'),
+      warning: v('--bs-warning', '--warning'),
+      danger: v('--bs-danger', '--danger'),
+      muted: v('--bs-secondary-color', '--bs-gray-600', '--gray-600'),
+      border: v('--bs-border-color', '--gray-300'),
+      surfaceAlt: v('--bs-light', '--light'),
+      radius: v('--bs-border-radius-lg', '--bs-border-radius'),
+      buttonRadius: v('--bs-border-radius'),
+      band: v('--bs-dark', '--dark'),
+    },
+    base,
+  );
 }
 
 /** The "look and feel" section added to AI prompts. */

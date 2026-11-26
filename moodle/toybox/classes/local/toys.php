@@ -60,10 +60,13 @@ class toys {
      * Which video site a URL belongs to.
      *
      * @param string $url
-     * @return string|null 'youtube', 'vimeo' or null for anything else (a video file)
+     * @return string|null 'youtube', 'vimeo', 'panopto' or null for anything else (a video file)
      */
     public static function video_provider(string $url): ?string {
         $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        if (preg_match('#/Panopto/Pages/(Viewer|Embed)\.aspx$#i', (string) parse_url($url, PHP_URL_PATH))) {
+            return 'panopto';
+        }
         if (preg_match('/(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/', $host)) {
             return 'youtube';
         }
@@ -93,6 +96,10 @@ class toys {
         }
         if ($provider === 'vimeo' && preg_match('#^/(?:video/)?(\d+)#', $path, $m)) {
             return $m[1];
+        }
+        if ($provider === 'panopto') {
+            $id = $query['id'] ?? '';
+            return preg_match('/^[0-9a-f-]{36}$/i', $id) ? $id : null;
         }
         return null;
     }

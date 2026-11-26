@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const r = (p) => resolve(root, p);
-const targets = process.argv.slice(2).length ? process.argv.slice(2) : ['demo', 'moodle'];
+const targets = process.argv.slice(2).length ? process.argv.slice(2) : ['demo', 'moodle', 'wordpress'];
 
 function copy(from, to) {
   rmSync(r(to), { recursive: true, force: true });
@@ -25,5 +25,11 @@ if (targets.includes('moodle')) {
   copy('core/public/toys', 'moodle/toybox/toys');
   copy('core/public/fonts', 'moodle/toybox/sdk/fonts');
   copy('core/guide/toybox-toy-guide.md', 'moodle/toybox/guide/toybox-toy-guide.md');
+}
+if (targets.includes('wordpress')) {
+  copy('core/public/toybox-sdk.js', 'wordpress/toybox/assets/sdk/toybox-sdk.js');
+  copy('core/public/fonts', 'wordpress/toybox/assets/sdk/fonts');
+  copy('core/public/toys', 'wordpress/toybox/assets/toys');
+  copy('core/guide/toybox-toy-guide.md', 'wordpress/toybox/assets/guide/toybox-toy-guide.md');
 }
 console.log('synced core →', targets.join(', '));

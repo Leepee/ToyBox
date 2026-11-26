@@ -1,0 +1,20 @@
+/* WordPress admin: the shared editor uses a few Bootstrap-style class names (as in Moodle). */
+.toybox-editor-root { margin: 8px 0; }
+.toybox-editor-root .btn { display: inline-block; font: inherit; font-size: 13px; line-height: 2.15; min-height: 30px; padding: 0 10px; cursor: pointer; border-radius: 3px; border: 1px solid #2271b1; color: #2271b1; background: #f6f7f7; text-decoration: none; }
+.toybox-editor-root .btn:hover { background: #f0f0f1; }
+.toybox-editor-root .btn-primary { background: #2271b1; color: #fff; }
+.toybox-editor-root .btn-secondary, .toybox-editor-root .btn-outline-secondary { border-color: #8c8f94; color: #1d2327; }
+.toybox-editor-root .btn-outline-danger { border-color: #d63638; color: #d63638; }
+.toybox-editor-root .btn-sm { min-height: 26px; line-height: 2; font-size: 12px; }
+.toybox-editor-root .form-control, .toybox-editor-root .custom-select, .toybox-editor-root .form-select { width: 100%; max-width: 100%; box-sizing: border-box; }
+.toybox-editor-root textarea.form-control { font-family: Consolas, Menlo, monospace; }
+.toybox-editor-root .form-check { display: flex; align-items: center; gap: 6px; }
+.toybox-editor-root .form-check-input { margin: 0; }
+.toybox-editor-root .alert { padding: 8px 12px; border-left: 4px solid #72aee6; background: #f0f6fc; margin: 0 0 8px; }
+.toybox-editor-root .alert-warning { border-color: #dba617; background: #fcf9e8; }
+.toybox-editor-root .invalid-feedback { color: #d63638; font-size: 12px; }
+.toybox-editor-root .is-invalid { border-color: #d63638 !important; }
+.toybox-editor-root .small { font-size: 12px; }
+.toybox-editor-root .align-self-end { align-self: end; }
+.toybox-editor-root .mod-toybox-side { top: 48px; }
+.toybox-editor-root .mod-toybox-tabs .btn-primary .t { opacity: .85; }

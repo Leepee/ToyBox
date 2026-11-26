@@ -59,7 +59,7 @@ $string['editor_messages'] = 'Messages from the toy';
 $string['editor_messageshelp'] = 'Press Preview to try the toy. Anything it reports appears here.';
 $string['editor_noproblems'] = 'No problems found';
 $string['editor_novideo'] = 'This activity has no video yet. Add one in the activity settings.';
-$string['editor_onlinevideo'] = 'This activity uses an online video (lower quality). YouTube and Vimeo add their own titles and buttons over the player. For the cleanest result, upload the video file in the activity settings.';
+$string['editor_onlinevideo'] = 'This activity uses an online video (lower quality). Video sites add their own titles and buttons over the player. For the cleanest result, upload the video file in the activity settings.';
 $string['editor_pausevideo'] = 'Pause the video';
 $string['editor_posx'] = 'Left %';
 $string['editor_posy'] = 'Top %';
@@ -92,7 +92,7 @@ $string['embedcode_help'] = 'Paste this into a Page, Book or other Moodle text (
 $string['error_badparams'] = 'The settings of toy "{$a}" are not valid JSON.';
 $string['error_badurl'] = 'Enter a full web address starting with http:// or https://';
 $string['error_toytoobig'] = 'A toy can be at most 1 MB.';
-$string['error_videoid'] = 'Couldn\'t find a video in this YouTube or Vimeo link. Copy the address of the video\'s own page.';
+$string['error_videoid'] = 'Couldn\'t find a video in this YouTube, Vimeo or Panopto link. Copy the address of the video\'s own page.';
 $string['finished'] = 'Finished';
 $string['jumpto'] = 'Jump to this toy';
 $string['loading'] = 'Loading…';
@@ -145,10 +145,10 @@ $string['videofile'] = 'Video file';
 $string['videosource'] = 'Video';
 $string['videosource_help'] = 'Using online video clutters the player. Best results are gained from uploading a video.
 
-YouTube and Vimeo show their own titles, buttons, logos and suggested videos over the player, and ToyBox can\'t remove them. An uploaded video shows only ToyBox\'s controls and the toys, and toys appear on exactly the right frame.';
+YouTube, Vimeo and Panopto show their own titles, buttons, logos or suggested videos over the player, and ToyBox can\'t remove them all. An uploaded video shows only ToyBox\'s controls and the toys, and toys appear on exactly the right frame.';
 $string['videosource_upload'] = 'Upload a video file (recommended)';
-$string['videosource_url'] = 'Link: YouTube, Vimeo or a video file (lower quality)';
+$string['videosource_url'] = 'Link: YouTube, Vimeo, Panopto or a video file (lower quality)';
 $string['videourl'] = 'Video address';
-$string['videourl_help'] = 'A YouTube or Vimeo link (for example https://www.youtube.com/watch?v=… or https://vimeo.com/…), or a direct link to a video file such as https://example.com/lesson.mp4.
+$string['videourl_help'] = 'A YouTube, Vimeo or Panopto link (for example https://www.youtube.com/watch?v=…, https://vimeo.com/… or https://yourschool.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=…), or a direct link to a video file such as https://example.com/lesson.mp4.
 
-YouTube videos play from youtube-nocookie.com (privacy-enhanced mode). Vimeo videos play with "do not track" on. ToyBox shows its own controls; some Vimeo plans still show Vimeo\'s.';
+YouTube plays from youtube-nocookie.com (privacy-enhanced mode) and Vimeo with "do not track" on. Panopto videos need viewers to have access to the session in Panopto (for example through your Moodle sign-in). ToyBox shows its own controls; the video sites may still show some of theirs.';

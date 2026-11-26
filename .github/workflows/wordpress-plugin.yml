@@ -1,0 +1,44 @@
+name: WordPress plugin
+
+# Checks the WordPress plugin and builds an installable zip (in the run's "Artifacts").
+on:
+  push:
+    branches: ['**']
+    paths: ['wordpress/**', 'core/**', 'scripts/build-wordpress.mjs', 'scripts/sync-core.mjs', '.github/workflows/wordpress-plugin.yml']
+  pull_request:
+    paths: ['wordpress/**', 'core/**']
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: PHP syntax
+        run: find wordpress/toybox -name '*.php' -print0 | xargs -0 -n1 php -l
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:wordpress
+      - name: Fail if the committed plugin files differ from a fresh build
+        run: git diff --exit-code -- wordpress/toybox || (echo "::error::Run 'npm run build:wordpress' and commit the result." && exit 1)
+
+  package:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cd wordpress && zip -r ../toybox-wordpress.zip toybox
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toybox-wordpress
+          path: toybox-wordpress.zip

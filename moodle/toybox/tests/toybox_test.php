@@ -154,6 +154,10 @@ final class toybox_test extends \advanced_testcase {
         $this->assertEquals('vimeo', toys::video_provider('https://vimeo.com/76979871'));
         $this->assertEquals('76979871', toys::video_id('https://player.vimeo.com/video/76979871?h=abc'));
         $this->assertNull(toys::video_provider('https://example.com/youtube.com.mp4'));
+        $panopto = 'https://ox.cloud.panopto.eu/Panopto/Pages/Embed.aspx?id=973a4b1a-edab-4672-8b20-ac080169dc9b';
+        $this->assertEquals('panopto', toys::video_provider($panopto));
+        $this->assertEquals('973a4b1a-edab-4672-8b20-ac080169dc9b', toys::video_id($panopto));
+        $this->assertNull(toys::video_id('https://ox.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=nope'));
     }
 
     /**

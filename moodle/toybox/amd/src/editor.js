@@ -133,6 +133,10 @@ function parseVideoUrl(url) {
       return { kind: "vimeo", id: m[1], ...hash ? { hash } : {} };
     }
   }
+  const pid = u.searchParams.get("id");
+  if (/\/Panopto\/Pages\/(Viewer|Embed)\.aspx$/i.test(u.pathname) && pid && /^[0-9a-f-]{36}$/i.test(pid)) {
+    return { kind: "panopto", server: u.host, id: pid };
+  }
   return { kind: "file", url: u.href };
 }
 function parseTime(t) {
@@ -145,6 +149,7 @@ function createMedia(url) {
   const v = parseVideoUrl(url);
   if (v.kind === "youtube") return new YouTubeMedia(v.id);
   if (v.kind === "vimeo") return new VimeoMedia(v.id, v.hash);
+  if (v.kind === "panopto") return new PanoptoMedia(v.server, v.id);
   return new FileMedia(v.url);
 }
 var FileMedia = class {
@@ -509,6 +514,99 @@ var VimeoMedia = class extends EmbedMedia {
     super.destroy();
   }
 };
+var panoptoCount = 0;
+var PanoptoMedia = class extends EmbedMedia {
+  constructor(server, sessionId) {
+    super();
+    this.server = server;
+    this.sessionId = sessionId;
+    __publicField(this, "kind", "panopto");
+    __publicField(this, "api", null);
+    __publicField(this, "poll", 0);
+    __publicField(this, "lastReported", -1);
+    __publicField(this, "pending", []);
+    this.target.id = `tb-panopto-${++panoptoCount}`;
+    loadScript("https://developers.panopto.com/scripts/embedapi.min.js").then(() => {
+      const EmbedApi = window.EmbedApi;
+      this.api = new EmbedApi(this.target.id, {
+        width: "100%",
+        height: "100%",
+        serverName: server,
+        sessionId,
+        videoParams: {
+          // Keep Panopto's own UI out of the way: ToyBox draws the controls.
+          interactivity: "none",
+          showtitle: "false",
+          showbrand: "false",
+          offerviewer: "false",
+          autoplay: "false"
+        },
+        events: {
+          onIframeReady: () => this.api.loadVideo(),
+          onReady: () => {
+            this.setDuration(this.api.getDuration());
+            this.markReady();
+            for (const fn of this.pending.splice(0)) fn();
+          },
+          onStateChange: (state) => this.onState(state),
+          onLoginShown: () => this.emit("login"),
+          onError: () => this.emit("error")
+        }
+      });
+    }).catch(() => this.emit("error"));
+  }
+  call(fn) {
+    if (this.ready) fn();
+    else this.pending.push(fn);
+  }
+  /** Take Panopto's time only when it has actually changed (and isn't the pre-seek value). */
+  sync() {
+    var _a, _b, _c, _d, _e;
+    const t = (_b = (_a = this.api) == null ? void 0 : _a.getCurrentTime) == null ? void 0 : _b.call(_a);
+    if (typeof t === "number" && t !== this.lastReported) {
+      this.lastReported = t;
+      this.report(t);
+    }
+    this.setDuration((_e = (_d = (_c = this.api) == null ? void 0 : _c.getDuration) == null ? void 0 : _d.call(_c)) != null ? _e : NaN);
+  }
+  onState(state) {
+    this.sync();
+    if (state === 1) {
+      this.setPlaying(true);
+      if (!this.poll) {
+        this.poll = window.setInterval(() => {
+          this.sync();
+          this.emit("timeupdate");
+        }, 250);
+      }
+    } else {
+      this.setPlaying(false);
+      clearInterval(this.poll);
+      this.poll = 0;
+      if (state === 0) this.emit("ended");
+    }
+  }
+  seekTo(t) {
+    this.call(() => {
+      this.api.seekTo(t);
+      this.lastReported = -1;
+      setTimeout(() => this.emit("seeked"), 200);
+    });
+  }
+  doPlay() {
+    this.call(() => this.api.playVideo());
+  }
+  doPause() {
+    this.call(() => this.api.pauseVideo());
+  }
+  setMuted(m) {
+    this.call(() => m ? this.api.muteVideo() : this.api.unmuteVideo());
+  }
+  destroy() {
+    clearInterval(this.poll);
+    super.destroy();
+  }
+};
 
 // core/src/theme.ts
 var THEMES = {
@@ -657,7 +755,86 @@ function toHex(c) {
   if (m[4] !== void 0 && parseFloat(m[4]) < (m[4].endsWith("%") ? 100 : 1)) return c.trim();
   return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
 }
-function themeFromPage(base = THEMES.toybox) {
+function rgbOf(c) {
+  const h = toHex(c);
+  let m = h.match(/^#([0-9a-f]{3})$/i);
+  if (m) return [0, 1, 2].map((i) => parseInt(m[1][i] + m[1][i], 16));
+  m = h.match(/^#([0-9a-f]{6})/i);
+  return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null;
+}
+function luminance(c) {
+  const rgb = rgbOf(c);
+  if (!rgb) return 1;
+  const [r, g, b] = rgb.map((v) => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) {
+  const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+function colourDistance(a, b) {
+  const x = rgbOf(a), y = rgbOf(b);
+  if (!x || !y) return 999;
+  return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+}
+var usable = (c) => !!c && !/^transparent$|rgba\([^)]*,\s*0\)$/i.test(c.trim()) && !!rgbOf(c);
+function themeFromTokens(t, base = THEMES.solent) {
+  var _a, _b, _c, _d, _e, _f;
+  const surface = usable(t.background) ? toHex(t.background) : "#ffffff";
+  const dark = luminance(surface) < 0.35;
+  const fallback = dark ? THEMES.toybox : THEMES.solent;
+  const pick = (c, min, alt) => usable(c) && contrast(toHex(c), surface) >= min ? toHex(c) : alt;
+  const text = pick(t.text, 4.5, dark ? "#f1f5f9" : "#1d2125");
+  const primary = usable(t.primary) ? toHex(t.primary) : fallback.primary;
+  const onPrimary = usable(t.onPrimary) && contrast(toHex(t.onPrimary), primary) >= 4.5 ? toHex(t.onPrimary) : contrast("#ffffff", primary) >= contrast("#111111", primary) ? "#ffffff" : "#111111";
+  const link = pick(t.link, 4.5, pick(primary, 4.5, text));
+  const danger = pick(t.danger, 3, fallback.danger);
+  const success = pick(t.success, 3, fallback.success);
+  const warning = pick(t.warning, 3, fallback.warning);
+  const palette = [];
+  for (const c of [...(_a = t.accents) != null ? _a : [], primary, link, danger, success, ...fallback.palette, ...base.palette]) {
+    if (!usable(c)) continue;
+    const hex = toHex(c);
+    if (contrast(hex, surface) < 3) continue;
+    if (palette.some((p) => colourDistance(p, hex) < 60)) continue;
+    if (palette.length < 6) palette.push(hex);
+  }
+  for (let i = 0; palette.length < 6 && i < 12; i++) palette.push((_b = palette[i % Math.max(1, palette.length)]) != null ? _b : text);
+  const accent = (_c = palette.find((c) => c.toLowerCase() !== primary.toLowerCase())) != null ? _c : danger;
+  const family = ((_d = t.font) != null ? _d : "").split(",")[0].replace(/["']/g, "").trim();
+  return {
+    id: "site",
+    name: (_e = t.name) != null ? _e : "This site",
+    mode: dark ? "dark" : "light",
+    font: t.font || fallback.font,
+    fontFaces: (_f = t.fontFaces) != null ? _f : [],
+    page: dark ? "#0b0f17" : "#e9ecef",
+    surface,
+    surfaceAlt: usable(t.surfaceAlt) ? toHex(t.surfaceAlt) : dark ? "#111827" : "#f8f9fa",
+    text,
+    muted: pick(t.muted, 4.5, dark ? "#94a3b8" : "#5f6670"),
+    border: usable(t.border) ? toHex(t.border) : dark ? "rgba(255, 255, 255, 0.15)" : "#dee2e6",
+    grid: dark ? "#1f2937" : "#e9ecef",
+    primary,
+    onPrimary,
+    accent,
+    link,
+    success,
+    warning,
+    danger,
+    palette,
+    radius: t.radius || "8px",
+    buttonRadius: t.buttonRadius || t.radius || "6px",
+    shadow: dark ? "0 8px 30px rgba(0, 0, 0, 0.5)" : "0 2px 8px rgba(0, 0, 0, 0.15)",
+    band: usable(t.band) ? toHex(t.band) : dark ? "#111827" : "#343a40",
+    onBand: "#ffffff",
+    promptNotes: `Match this site's look: font ${family || "the system font"}, main buttons ${primary} with ${onPrimary} text, text ${text} on ${surface}, links ${link}, brand highlight ${accent}. Clean cards with rounded corners. Use the highlight colour sparingly.`
+  };
+}
+function themeFromPage(base = THEMES.solent) {
   var _a, _b;
   const root = getComputedStyle(document.documentElement);
   const body = getComputedStyle(document.body);
@@ -676,7 +853,6 @@ function themeFromPage(base = THEMES.toybox) {
     el2.remove();
     return out;
   };
-  const primary = toHex(v("--bs-primary", "--primary") || probe("btn btn-primary", "background-color") || base.primary);
   const family = body.fontFamily.split(",")[0].replace(/["']/g, "").trim();
   const faces = [];
   for (const sheet of Array.from(document.styleSheets)) {
@@ -696,45 +872,30 @@ function themeFromPage(base = THEMES.toybox) {
       }
     }
   }
-  const text = toHex(body.color || base.text);
-  const pageBg = body.backgroundColor && body.backgroundColor !== "rgba(0, 0, 0, 0)" ? body.backgroundColor : "#ffffff";
-  const success = toHex(v("--bs-success", "--success") || base.success);
-  const info = toHex(v("--bs-info", "--info") || base.link);
-  const danger = toHex(v("--bs-danger", "--danger") || base.danger);
-  const warning = toHex(v("--bs-warning", "--warning") || base.warning);
-  const link = toHex(probe("a.", "color") || primary);
-  const palette = [];
-  for (const c of [primary, danger, success, info, warning, link, ...base.palette].map(toHex)) {
-    if (!palette.some((p) => p.toLowerCase() === c.toLowerCase()) && palette.length < 6) palette.push(c);
-  }
-  return {
-    id: "site",
-    name: "This site",
-    mode: "light",
-    font: body.fontFamily || base.font,
-    fontFaces: faces,
-    page: v("--bs-gray-200", "--gray-200") || "#e9ecef",
-    surface: toHex(pageBg),
-    surfaceAlt: v("--bs-light", "--light") || "#f8f9fa",
-    text,
-    muted: v("--bs-secondary-color", "--bs-gray-600", "--gray-600") || "#6c757d",
-    border: v("--bs-border-color", "--gray-300") || "#dee2e6",
-    grid: v("--bs-gray-200", "--gray-200") || "#e9ecef",
-    primary,
-    onPrimary: toHex(probe("btn btn-primary", "color") || "#ffffff"),
-    accent: danger,
-    link,
-    success,
-    warning,
-    danger,
-    palette,
-    radius: v("--bs-border-radius-lg", "--bs-border-radius") || "8px",
-    buttonRadius: v("--bs-border-radius") || "6px",
-    shadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
-    band: v("--bs-dark", "--dark") || "#343a40",
-    onBand: "#ffffff",
-    promptNotes: `Match this learning site: font ${family || "system"}, buttons in ${primary} with ${"white"} text, text ${text}, links ${link}. Light, clean cards with rounded corners. Use the brand colour sparingly for highlights.`
-  };
+  const bodyBg = body.backgroundColor;
+  return themeFromTokens(
+    {
+      font: body.fontFamily,
+      fontFaces: faces,
+      text: body.color,
+      background: usable(bodyBg) ? bodyBg : "#ffffff",
+      // Bootstrap (Moodle) first, then WordPress block-theme presets.
+      primary: v("--bs-primary", "--primary", "--wp--preset--color--primary") || probe("btn btn-primary", "background-color"),
+      onPrimary: probe("btn btn-primary", "color"),
+      link: probe("a.", "color"),
+      accents: [v("--bs-primary", "--primary"), v("--bs-info", "--info")].filter(Boolean),
+      success: v("--bs-success", "--success"),
+      warning: v("--bs-warning", "--warning"),
+      danger: v("--bs-danger", "--danger"),
+      muted: v("--bs-secondary-color", "--bs-gray-600", "--gray-600"),
+      border: v("--bs-border-color", "--gray-300"),
+      surfaceAlt: v("--bs-light", "--light"),
+      radius: v("--bs-border-radius-lg", "--bs-border-radius"),
+      buttonRadius: v("--bs-border-radius"),
+      band: v("--bs-dark", "--dark")
+    },
+    base
+  );
 }
 function themePromptSection(t) {
   const vars = themeVars(t);
@@ -1252,10 +1413,10 @@ Please reply with the complete toy as **one HTML file** in a single code block, 
 `;
 }
 
-// moodle/src/shared.ts
-function readConfig(root) {
+// core/src/hostKit.ts
+function readConfig(root, selector = "script.mod-toybox-config") {
   var _a;
-  const el2 = root.querySelector("script.mod-toybox-config");
+  const el2 = root.querySelector(selector);
   return JSON.parse((_a = el2 == null ? void 0 : el2.textContent) != null ? _a : "{}");
 }
 function fromServer(toys) {
@@ -1264,7 +1425,8 @@ function fromServer(toys) {
     return { ...t, id: String(t.id), params: (_a = t.params) != null ? _a : {} };
   });
 }
-async function loadTheme(id, sdkUrl) {
+async function loadTheme(id, sdkUrl, site) {
+  if ((id === "auto" || !THEMES[id]) && site) return resolveThemeFonts(themeFromTokens(site), location.href);
   if (id === "auto" || !THEMES[id]) return resolveThemeFonts(themeFromPage(THEMES.solent), location.href);
   return resolveThemeFonts(THEMES[id], sdkUrl);
 }
@@ -1283,13 +1445,12 @@ function el(tag, attrs = {}, ...kids) {
   return node;
 }
 
-// moodle/src/editor.ts
+// core/src/editor.ts
 var newCounter = 0;
-var init = async (selector) => {
-  const root = document.querySelector(selector);
-  if (!root) return;
-  const cfg = readConfig(root);
-  const theme = await loadTheme(cfg.theme, cfg.sdkUrl);
+var newId = () => `toy-${Date.now().toString(36)}-${++newCounter}`;
+async function mountEditor(root, cfg, host) {
+  var _a;
+  const theme = await loadTheme(cfg.theme, cfg.sdkUrl, cfg.site);
   const S = cfg.strings;
   const isVideo = cfg.mode === "video";
   let toys = fromServer(cfg.toys);
@@ -1297,13 +1458,13 @@ var init = async (selector) => {
   let aspect = cfg.aspect;
   let dirty = false;
   const blankToy = () => {
-    var _a, _b;
+    var _a2, _b;
     return {
-      id: `new-${++newCounter}`,
+      id: newId(),
       label: isVideo ? `${S.toy} ${toys.length + 1}` : S.toy,
       html: STARTER,
       params: { ...EXAMPLES[0].params },
-      start: Math.floor((_a = player == null ? void 0 : player.video.currentTime) != null ? _a : 0),
+      start: Math.floor((_a2 = player == null ? void 0 : player.video.currentTime) != null ? _a2 : 0),
       end: Math.floor((_b = player == null ? void 0 : player.video.currentTime) != null ? _b : 0) + 2,
       rect: { x: 20, y: 12, w: 60, h: 62 },
       pause: true,
@@ -1319,7 +1480,7 @@ var init = async (selector) => {
   const lintList = el("ul.mod-toybox-lint");
   const out = el("pre.mod-toybox-out", { text: S.messageshelp });
   root.append(
-    el("div.mod-toybox-editbar", {}, saveBtn, status),
+    ...host.save ? [el("div.mod-toybox-editbar", {}, saveBtn, status)] : [],
     ...isVideo ? [tabs] : [],
     el(
       "div.mod-toybox-editor",
@@ -1362,6 +1523,8 @@ var init = async (selector) => {
   }
   if (!toys.length) toys.push(blankToy());
   function markDirty() {
+    var _a2;
+    (_a2 = host.onChange) == null ? void 0 : _a2.call(host, toys, aspect);
     dirty = true;
     status.textContent = S.unsaved;
     status.classList.add("unsaved");
@@ -1380,9 +1543,9 @@ var init = async (selector) => {
     print(`--- ${S.previewing}: ${t.label || S.untitled}`);
   }
   function renderLint() {
-    var _a;
+    var _a2;
     const t = toys[current];
-    const issues = lintToy((_a = t == null ? void 0 : t.html) != null ? _a : "", { mode: cfg.mode, autoHeight: aspect === "auto" });
+    const issues = lintToy((_a2 = t == null ? void 0 : t.html) != null ? _a2 : "", { mode: cfg.mode, autoHeight: aspect === "auto" });
     lintList.replaceChildren(
       ...issues.length ? issues.map((i) => el("li", { class: i.level, text: i.message })) : [el("li.ok", { text: "\u2713 " + S.noproblems })]
     );
@@ -1423,7 +1586,7 @@ var init = async (selector) => {
     preview();
   }
   function renderFields() {
-    var _a, _b, _c;
+    var _a2, _b, _c;
     const t = toys[current];
     const input = (key, label, type, value, onchange, extra = {}) => {
       const id = `mod-toybox-f-${key}`;
@@ -1449,7 +1612,7 @@ var init = async (selector) => {
       wrap: "off",
       rows: 18
     });
-    html.value = (_a = t.html) != null ? _a : "";
+    html.value = (_a2 = t.html) != null ? _a2 : "";
     let lintTimer = 0;
     html.oninput = () => {
       t.html = html.value;
@@ -1481,10 +1644,10 @@ var init = async (selector) => {
     examples.append(el("option", { value: "", text: S.startfrom + "\u2026" }));
     for (const ex of EXAMPLES) examples.append(el("option", { value: ex.file, text: ex.name }));
     examples.onchange = async () => {
-      var _a2;
+      var _a3;
       const ex = EXAMPLES.find((e) => e.file === examples.value);
       if (!ex) return;
-      if (((_a2 = t.html) == null ? void 0 : _a2.trim()) && t.html !== STARTER && !window.confirm(S.replacecode)) {
+      if (((_a3 = t.html) == null ? void 0 : _a3.trim()) && t.html !== STARTER && !window.confirm(S.replacecode)) {
         examples.value = "";
         return;
       }
@@ -1503,10 +1666,10 @@ var init = async (selector) => {
     };
     const aiBtn = el("button.btn.btn-outline-primary", { type: "button", text: "\u2728 " + S.copyaiprompt, title: S.copyaiprompt_help });
     aiBtn.onclick = async () => {
-      var _a2, _b2;
+      var _a3, _b2;
       try {
         const guide = await (await fetch(cfg.guideUrl)).text();
-        const fresh = !((_a2 = t.html) == null ? void 0 : _a2.trim()) || t.html.trim() === STARTER.trim();
+        const fresh = !((_a3 = t.html) == null ? void 0 : _a3.trim()) || t.html.trim() === STARTER.trim();
         const prompt = buildAiPrompt(guide, {
           mode: cfg.mode,
           aspect,
@@ -1519,9 +1682,9 @@ var init = async (selector) => {
           issues: fresh ? void 0 : lintToy((_b2 = t.html) != null ? _b2 : "", { mode: cfg.mode, autoHeight: aspect === "auto" })
         }, theme);
         await navigator.clipboard.writeText(prompt);
-        addToast(S.promptcopied, { type: "success" });
+        host.notify(S.promptcopied, "success");
       } catch (e) {
-        Notification.alert(S.copyaiprompt, S.promptfailed);
+        host.alert(S.copyaiprompt, S.promptfailed);
       }
     };
     const rows = [
@@ -1540,8 +1703,8 @@ var init = async (selector) => {
         text: "\u23F1 " + S.starthere,
         title: S.starthere_help,
         onclick: () => {
-          var _a2;
-          const now = Math.round(((_a2 = player == null ? void 0 : player.video.currentTime) != null ? _a2 : 0) * 10) / 10;
+          var _a3;
+          const now = Math.round(((_a3 = player == null ? void 0 : player.video.currentTime) != null ? _a3 : 0) * 10) / 10;
           const len = Math.max(0.5, t.end - t.start);
           t.start = now;
           t.end = Math.round((now + len) * 10) / 10;
@@ -1646,24 +1809,24 @@ var init = async (selector) => {
     fields.replaceChildren(...rows.filter(Boolean));
   }
   saveBtn.onclick = () => {
+    if (!host.save) return;
     const bad = toys.findIndex((t) => typeof t.params !== "object");
     if (bad >= 0) return select(bad);
     saveBtn.disabled = true;
-    const payload = toys.map((t) => ({ ...t, id: /^\d+$/.test(t.id) ? Number(t.id) : 0 }));
-    Promise.resolve(Ajax.call([{ methodname: "mod_toybox_save_toys", args: { cmid: cfg.cmid, aspect, toys: JSON.stringify(payload) } }])[0]).then((r) => {
+    host.save(toys, aspect).then((saved) => {
       const keepIndex = current;
-      toys = fromServer(JSON.parse(r.toys));
+      toys = fromServer(saved);
       if (!toys.length) toys.push(blankToy());
       current = Math.min(keepIndex, toys.length - 1);
       dirty = false;
       status.textContent = S.allsaved;
       status.classList.remove("unsaved");
       renderTabs();
-      addToast(S.saved, { type: "success" });
-    }).catch(Notification.exception).finally(() => saveBtn.disabled = false);
+      host.notify(S.saved, "success");
+    }).catch(host.error).finally(() => saveBtn.disabled = false);
   };
   window.addEventListener("beforeunload", (e) => {
-    if (dirty) {
+    if (dirty && host.save) {
       e.preventDefault();
       e.returnValue = "";
     }
@@ -1672,12 +1835,31 @@ var init = async (selector) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       preview();
-    } else if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+    } else if ((e.metaKey || e.ctrlKey) && e.key === "s" && host.save) {
       e.preventDefault();
       saveBtn.click();
     }
   });
   select(0);
+  (_a = host.onChange) == null ? void 0 : _a.call(host, toys, aspect);
+}
+
+// moodle/src/editor.ts
+var init = async (selector) => {
+  const root = document.querySelector(selector);
+  if (!root) return;
+  const cfg = readConfig(root);
+  await mountEditor(root, cfg, {
+    save: (toys, aspect) => {
+      const payload = toys.map((t) => ({ ...t, id: /^\d+$/.test(t.id) ? Number(t.id) : 0 }));
+      return Promise.resolve(
+        Ajax.call([{ methodname: "mod_toybox_save_toys", args: { cmid: cfg.cmid, aspect, toys: JSON.stringify(payload) } }])[0]
+      ).then((r) => JSON.parse(r.toys));
+    },
+    notify: (message, type = "info") => addToast(message, { type }),
+    alert: (title, message) => Notification.alert(title, message),
+    error: (e) => Notification.exception(e)
+  });
 };
 export {
   init

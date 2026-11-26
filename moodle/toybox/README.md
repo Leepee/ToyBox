@@ -38,12 +38,13 @@ Teachers write toys in HTML, or get an AI to write them: the toy editor's **Copy
   - Finishing toys still counts for completion. The view is logged when the player first appears, so the "view" completion rule works too.
 - **Embed code**: editors see it under the activity. It's an `<iframe>` of `mod/toybox/embed.php?id=…` (just the player, no Moodle page around it), for use in a Page, Book or other text. To embed on other websites, turn on *Allow frame embedding* (Site administration → Security → HTTP security).
 
-## YouTube and Vimeo
+## YouTube, Vimeo and Panopto
 
 - **YouTube** plays from `youtube-nocookie.com` (privacy-enhanced mode), with YouTube's own controls hidden. ToyBox's controls drive it through YouTube's IFrame Player API.
 - **Vimeo** plays with *do not track* on, through Vimeo's Player API. Vimeo only hides its own controls for videos on paid Vimeo plans; otherwise both sets show.
+- **Panopto** plays through Panopto's Embed API with its own interface turned down. Viewers need access to the session in Panopto, for example through your Moodle sign-in, and Panopto may still show its settings/captions buttons.
 - Toys appear within a fraction of a second of their time; uploaded video files are frame-accurate.
-- Learners' browsers need to reach `youtube.com`/`youtube-nocookie.com` or `vimeo.com`, as for any embedded video.
+- Learners' browsers need to reach `youtube.com`/`youtube-nocookie.com`, `vimeo.com` or your Panopto server, as for any embedded video.
 
 ## Look and feel
 

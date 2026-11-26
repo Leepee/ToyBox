@@ -133,6 +133,10 @@ function parseVideoUrl(url) {
       return { kind: "vimeo", id: m[1], ...hash ? { hash } : {} };
     }
   }
+  const pid = u.searchParams.get("id");
+  if (/\/Panopto\/Pages\/(Viewer|Embed)\.aspx$/i.test(u.pathname) && pid && /^[0-9a-f-]{36}$/i.test(pid)) {
+    return { kind: "panopto", server: u.host, id: pid };
+  }
   return { kind: "file", url: u.href };
 }
 function parseTime(t) {
@@ -145,6 +149,7 @@ function createMedia(url) {
   const v = parseVideoUrl(url);
   if (v.kind === "youtube") return new YouTubeMedia(v.id);
   if (v.kind === "vimeo") return new VimeoMedia(v.id, v.hash);
+  if (v.kind === "panopto") return new PanoptoMedia(v.server, v.id);
   return new FileMedia(v.url);
 }
 var FileMedia = class {
@@ -509,6 +514,99 @@ var VimeoMedia = class extends EmbedMedia {
     super.destroy();
   }
 };
+var panoptoCount = 0;
+var PanoptoMedia = class extends EmbedMedia {
+  constructor(server, sessionId) {
+    super();
+    this.server = server;
+    this.sessionId = sessionId;
+    __publicField(this, "kind", "panopto");
+    __publicField(this, "api", null);
+    __publicField(this, "poll", 0);
+    __publicField(this, "lastReported", -1);
+    __publicField(this, "pending", []);
+    this.target.id = `tb-panopto-${++panoptoCount}`;
+    loadScript("https://developers.panopto.com/scripts/embedapi.min.js").then(() => {
+      const EmbedApi = window.EmbedApi;
+      this.api = new EmbedApi(this.target.id, {
+        width: "100%",
+        height: "100%",
+        serverName: server,
+        sessionId,
+        videoParams: {
+          // Keep Panopto's own UI out of the way: ToyBox draws the controls.
+          interactivity: "none",
+          showtitle: "false",
+          showbrand: "false",
+          offerviewer: "false",
+          autoplay: "false"
+        },
+        events: {
+          onIframeReady: () => this.api.loadVideo(),
+          onReady: () => {
+            this.setDuration(this.api.getDuration());
+            this.markReady();
+            for (const fn of this.pending.splice(0)) fn();
+          },
+          onStateChange: (state) => this.onState(state),
+          onLoginShown: () => this.emit("login"),
+          onError: () => this.emit("error")
+        }
+      });
+    }).catch(() => this.emit("error"));
+  }
+  call(fn) {
+    if (this.ready) fn();
+    else this.pending.push(fn);
+  }
+  /** Take Panopto's time only when it has actually changed (and isn't the pre-seek value). */
+  sync() {
+    var _a, _b, _c, _d, _e;
+    const t = (_b = (_a = this.api) == null ? void 0 : _a.getCurrentTime) == null ? void 0 : _b.call(_a);
+    if (typeof t === "number" && t !== this.lastReported) {
+      this.lastReported = t;
+      this.report(t);
+    }
+    this.setDuration((_e = (_d = (_c = this.api) == null ? void 0 : _c.getDuration) == null ? void 0 : _d.call(_c)) != null ? _e : NaN);
+  }
+  onState(state) {
+    this.sync();
+    if (state === 1) {
+      this.setPlaying(true);
+      if (!this.poll) {
+        this.poll = window.setInterval(() => {
+          this.sync();
+          this.emit("timeupdate");
+        }, 250);
+      }
+    } else {
+      this.setPlaying(false);
+      clearInterval(this.poll);
+      this.poll = 0;
+      if (state === 0) this.emit("ended");
+    }
+  }
+  seekTo(t) {
+    this.call(() => {
+      this.api.seekTo(t);
+      this.lastReported = -1;
+      setTimeout(() => this.emit("seeked"), 200);
+    });
+  }
+  doPlay() {
+    this.call(() => this.api.playVideo());
+  }
+  doPause() {
+    this.call(() => this.api.pauseVideo());
+  }
+  setMuted(m) {
+    this.call(() => m ? this.api.muteVideo() : this.api.unmuteVideo());
+  }
+  destroy() {
+    clearInterval(this.poll);
+    super.destroy();
+  }
+};
 
 // core/src/theme.ts
 var THEMES = {
@@ -657,7 +755,86 @@ function toHex(c) {
   if (m[4] !== void 0 && parseFloat(m[4]) < (m[4].endsWith("%") ? 100 : 1)) return c.trim();
   return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
 }
-function themeFromPage(base = THEMES.toybox) {
+function rgbOf(c) {
+  const h = toHex(c);
+  let m = h.match(/^#([0-9a-f]{3})$/i);
+  if (m) return [0, 1, 2].map((i) => parseInt(m[1][i] + m[1][i], 16));
+  m = h.match(/^#([0-9a-f]{6})/i);
+  return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null;
+}
+function luminance(c) {
+  const rgb = rgbOf(c);
+  if (!rgb) return 1;
+  const [r, g, b] = rgb.map((v) => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) {
+  const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+function colourDistance(a, b) {
+  const x = rgbOf(a), y = rgbOf(b);
+  if (!x || !y) return 999;
+  return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+}
+var usable = (c) => !!c && !/^transparent$|rgba\([^)]*,\s*0\)$/i.test(c.trim()) && !!rgbOf(c);
+function themeFromTokens(t, base = THEMES.solent) {
+  var _a, _b, _c, _d, _e, _f;
+  const surface = usable(t.background) ? toHex(t.background) : "#ffffff";
+  const dark = luminance(surface) < 0.35;
+  const fallback = dark ? THEMES.toybox : THEMES.solent;
+  const pick = (c, min, alt) => usable(c) && contrast(toHex(c), surface) >= min ? toHex(c) : alt;
+  const text = pick(t.text, 4.5, dark ? "#f1f5f9" : "#1d2125");
+  const primary = usable(t.primary) ? toHex(t.primary) : fallback.primary;
+  const onPrimary = usable(t.onPrimary) && contrast(toHex(t.onPrimary), primary) >= 4.5 ? toHex(t.onPrimary) : contrast("#ffffff", primary) >= contrast("#111111", primary) ? "#ffffff" : "#111111";
+  const link = pick(t.link, 4.5, pick(primary, 4.5, text));
+  const danger = pick(t.danger, 3, fallback.danger);
+  const success = pick(t.success, 3, fallback.success);
+  const warning = pick(t.warning, 3, fallback.warning);
+  const palette = [];
+  for (const c of [...(_a = t.accents) != null ? _a : [], primary, link, danger, success, ...fallback.palette, ...base.palette]) {
+    if (!usable(c)) continue;
+    const hex = toHex(c);
+    if (contrast(hex, surface) < 3) continue;
+    if (palette.some((p) => colourDistance(p, hex) < 60)) continue;
+    if (palette.length < 6) palette.push(hex);
+  }
+  for (let i = 0; palette.length < 6 && i < 12; i++) palette.push((_b = palette[i % Math.max(1, palette.length)]) != null ? _b : text);
+  const accent = (_c = palette.find((c) => c.toLowerCase() !== primary.toLowerCase())) != null ? _c : danger;
+  const family = ((_d = t.font) != null ? _d : "").split(",")[0].replace(/["']/g, "").trim();
+  return {
+    id: "site",
+    name: (_e = t.name) != null ? _e : "This site",
+    mode: dark ? "dark" : "light",
+    font: t.font || fallback.font,
+    fontFaces: (_f = t.fontFaces) != null ? _f : [],
+    page: dark ? "#0b0f17" : "#e9ecef",
+    surface,
+    surfaceAlt: usable(t.surfaceAlt) ? toHex(t.surfaceAlt) : dark ? "#111827" : "#f8f9fa",
+    text,
+    muted: pick(t.muted, 4.5, dark ? "#94a3b8" : "#5f6670"),
+    border: usable(t.border) ? toHex(t.border) : dark ? "rgba(255, 255, 255, 0.15)" : "#dee2e6",
+    grid: dark ? "#1f2937" : "#e9ecef",
+    primary,
+    onPrimary,
+    accent,
+    link,
+    success,
+    warning,
+    danger,
+    palette,
+    radius: t.radius || "8px",
+    buttonRadius: t.buttonRadius || t.radius || "6px",
+    shadow: dark ? "0 8px 30px rgba(0, 0, 0, 0.5)" : "0 2px 8px rgba(0, 0, 0, 0.15)",
+    band: usable(t.band) ? toHex(t.band) : dark ? "#111827" : "#343a40",
+    onBand: "#ffffff",
+    promptNotes: `Match this site's look: font ${family || "the system font"}, main buttons ${primary} with ${onPrimary} text, text ${text} on ${surface}, links ${link}, brand highlight ${accent}. Clean cards with rounded corners. Use the highlight colour sparingly.`
+  };
+}
+function themeFromPage(base = THEMES.solent) {
   var _a, _b;
   const root = getComputedStyle(document.documentElement);
   const body = getComputedStyle(document.body);
@@ -676,7 +853,6 @@ function themeFromPage(base = THEMES.toybox) {
     el2.remove();
     return out;
   };
-  const primary = toHex(v("--bs-primary", "--primary") || probe("btn btn-primary", "background-color") || base.primary);
   const family = body.fontFamily.split(",")[0].replace(/["']/g, "").trim();
   const faces = [];
   for (const sheet of Array.from(document.styleSheets)) {
@@ -696,45 +872,30 @@ function themeFromPage(base = THEMES.toybox) {
       }
     }
   }
-  const text = toHex(body.color || base.text);
-  const pageBg = body.backgroundColor && body.backgroundColor !== "rgba(0, 0, 0, 0)" ? body.backgroundColor : "#ffffff";
-  const success = toHex(v("--bs-success", "--success") || base.success);
-  const info = toHex(v("--bs-info", "--info") || base.link);
-  const danger = toHex(v("--bs-danger", "--danger") || base.danger);
-  const warning = toHex(v("--bs-warning", "--warning") || base.warning);
-  const link = toHex(probe("a.", "color") || primary);
-  const palette = [];
-  for (const c of [primary, danger, success, info, warning, link, ...base.palette].map(toHex)) {
-    if (!palette.some((p) => p.toLowerCase() === c.toLowerCase()) && palette.length < 6) palette.push(c);
-  }
-  return {
-    id: "site",
-    name: "This site",
-    mode: "light",
-    font: body.fontFamily || base.font,
-    fontFaces: faces,
-    page: v("--bs-gray-200", "--gray-200") || "#e9ecef",
-    surface: toHex(pageBg),
-    surfaceAlt: v("--bs-light", "--light") || "#f8f9fa",
-    text,
-    muted: v("--bs-secondary-color", "--bs-gray-600", "--gray-600") || "#6c757d",
-    border: v("--bs-border-color", "--gray-300") || "#dee2e6",
-    grid: v("--bs-gray-200", "--gray-200") || "#e9ecef",
-    primary,
-    onPrimary: toHex(probe("btn btn-primary", "color") || "#ffffff"),
-    accent: danger,
-    link,
-    success,
-    warning,
-    danger,
-    palette,
-    radius: v("--bs-border-radius-lg", "--bs-border-radius") || "8px",
-    buttonRadius: v("--bs-border-radius") || "6px",
-    shadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
-    band: v("--bs-dark", "--dark") || "#343a40",
-    onBand: "#ffffff",
-    promptNotes: `Match this learning site: font ${family || "system"}, buttons in ${primary} with ${"white"} text, text ${text}, links ${link}. Light, clean cards with rounded corners. Use the brand colour sparingly for highlights.`
-  };
+  const bodyBg = body.backgroundColor;
+  return themeFromTokens(
+    {
+      font: body.fontFamily,
+      fontFaces: faces,
+      text: body.color,
+      background: usable(bodyBg) ? bodyBg : "#ffffff",
+      // Bootstrap (Moodle) first, then WordPress block-theme presets.
+      primary: v("--bs-primary", "--primary", "--wp--preset--color--primary") || probe("btn btn-primary", "background-color"),
+      onPrimary: probe("btn btn-primary", "color"),
+      link: probe("a.", "color"),
+      accents: [v("--bs-primary", "--primary"), v("--bs-info", "--info")].filter(Boolean),
+      success: v("--bs-success", "--success"),
+      warning: v("--bs-warning", "--warning"),
+      danger: v("--bs-danger", "--danger"),
+      muted: v("--bs-secondary-color", "--bs-gray-600", "--gray-600"),
+      border: v("--bs-border-color", "--gray-300"),
+      surfaceAlt: v("--bs-light", "--light"),
+      radius: v("--bs-border-radius-lg", "--bs-border-radius"),
+      buttonRadius: v("--bs-border-radius"),
+      band: v("--bs-dark", "--dark")
+    },
+    base
+  );
 }
 
 // core/src/player.ts
@@ -1059,10 +1220,10 @@ var StandaloneToy = class {
   }
 };
 
-// moodle/src/shared.ts
-function readConfig(root) {
+// core/src/hostKit.ts
+function readConfig(root, selector = "script.mod-toybox-config") {
   var _a;
-  const el2 = root.querySelector("script.mod-toybox-config");
+  const el2 = root.querySelector(selector);
   return JSON.parse((_a = el2 == null ? void 0 : el2.textContent) != null ? _a : "{}");
 }
 function fromServer(toys) {
@@ -1071,7 +1232,8 @@ function fromServer(toys) {
     return { ...t, id: String(t.id), params: (_a = t.params) != null ? _a : {} };
   });
 }
-async function loadTheme(id, sdkUrl) {
+async function loadTheme(id, sdkUrl, site) {
+  if ((id === "auto" || !THEMES[id]) && site) return resolveThemeFonts(themeFromTokens(site), location.href);
   if (id === "auto" || !THEMES[id]) return resolveThemeFonts(themeFromPage(THEMES.solent), location.href);
   return resolveThemeFonts(THEMES[id], sdkUrl);
 }

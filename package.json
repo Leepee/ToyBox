@@ -8,6 +8,7 @@
     "dev": "node scripts/sync-core.mjs demo && vite",
     "build": "node scripts/sync-core.mjs demo && tsc --noEmit && vite build",
     "build:moodle": "node scripts/sync-core.mjs moodle && node scripts/build-moodle.mjs",
+    "build:wordpress": "node scripts/sync-core.mjs wordpress && node scripts/build-wordpress.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {

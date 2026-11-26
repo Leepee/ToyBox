@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Wave Lab</title>
+  <script src="../toybox-sdk.js"></script>
+  <style>
+    :root { --amber: var(--tb-c1); --cyan: var(--tb-c2); --pink: var(--tb-c3); --green: var(--tb-success); --muted: var(--tb-muted); font-family: var(--tb-font); color: var(--tb-text); }
+    html, body { margin: 0; height: 100%; background: transparent; }
+    .card {
+      box-sizing: border-box; height: 100vh; padding: 2.2vh 2.4vw; gap: 1.6vh;
+      background: var(--tb-surface); border: 1px solid var(--tb-border); border-radius: var(--tb-radius); box-shadow: var(--tb-shadow);
+      display: grid; grid-template-rows: auto 1fr auto auto;
+    }
+    header { display: flex; align-items: baseline; gap: 1.2vw; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: clamp(15px, 3vw, 26px); }
+    .goal { color: var(--muted); font-size: clamp(11px, 1.9vw, 16px); }
+    .eq { margin-left: auto; font: 600 clamp(12px, 2.2vw, 19px) ui-monospace, Menlo, monospace; }
+    .eq .a { color: var(--amber); } .eq .f { color: var(--cyan); } .eq .p { color: var(--pink); }
+    canvas { width: 100%; height: 100%; min-height: 0; display: block; border-radius: calc(var(--tb-radius) * 0.6); background: var(--tb-surface-alt); touch-action: none; }
+    .controls { display: grid; grid-template-columns: auto 1fr 5.5em; gap: .6vh 1vw; align-items: center; font-size: clamp(11px, 1.9vw, 16px); }
+    .controls label { font-weight: 700; }
+    .controls output { font-variant-numeric: tabular-nums; text-align: right; }
+    input[type=range] { width: 100%; height: 22px; }
+    #A { accent-color: var(--amber); } #f { accent-color: var(--cyan); } #p { accent-color: var(--pink); }
+    footer { display: flex; align-items: center; gap: 1vw; flex-wrap: wrap; font-size: clamp(11px, 1.9vw, 16px); }
+    button { font: inherit; border: 1px solid var(--tb-border); background: var(--tb-surface-alt); color: inherit; border-radius: var(--tb-button-radius); padding: .45em 1em; cursor: pointer; }
+    button:hover { filter: brightness(0.95); }
+    button.go { margin-left: auto; background: var(--tb-primary); color: var(--tb-on-primary); border-color: transparent; }
+    button.go.ready { background: var(--tb-success); color: var(--tb-surface); font-weight: 700; animation: pulse 1s infinite alternate; }
+    @keyframes pulse { to { box-shadow: 0 0 0 6px color-mix(in srgb, var(--tb-success) 30%, transparent); } }
+    .status { min-height: 1.3em; }
+    .status.win { color: var(--green); font-weight: 700; }
+    .hide { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <h1>Wave Lab</h1>
+      <span class="goal" id="goal"></span>
+      <span class="eq" id="eq"></span>
+    </header>
+    <canvas id="c"></canvas>
+    <div class="controls">
+      <label for="A" style="color:var(--amber)">Amplitude A</label><input id="A" type="range" min="0" max="1" step="0.01" /><output id="Ao"></output>
+      <label for="f" style="color:var(--cyan)">Frequency f</label><input id="f" type="range" min="0.5" max="5" step="0.1" /><output id="fo"></output>
+      <label for="p" style="color:var(--pink)" class="ph">Phase φ</label><input id="p" class="ph" type="range" min="0" max="360" step="1" /><output id="po" class="ph"></output>
+    </div>
+    <footer>
+      <button id="hear" aria-pressed="false">🔊 Hear it</button>
+      <span class="status" id="status" aria-live="polite"></span>
+      <button class="go" id="go">Continue ▶</button>
+    </footer>
+  </div>
+  <script>
+    ToyBox.defaults({ amplitude: 0.4, frequency: 1, target: { amplitude: 0.8, frequency: 3 }, window: 2 });
+
+    ToyBox.onInit(function (p) {
+      var $ = function (id) { return document.getElementById(id); };
+      var C = function (k, a) { var c = ToyBox.color(k); if (a == null || !/^#[0-9a-f]{6}$/i.test(c)) return c; return 'rgba(' + parseInt(c.slice(1, 3), 16) + ',' + parseInt(c.slice(3, 5), 16) + ',' + parseInt(c.slice(5, 7), 16) + ',' + a + ')'; };
+      if (!ToyBox.hasVideo) $('go').textContent = 'Done ✓';
+      var cv = $('c'), ctx = cv.getContext('2d');
+      var A = $('A'), F = $('f'), PH = $('p');
+      var target = p.target || null;
+      var tol = p.tolerance || { amplitude: 0.06, frequency: 0.15 };
+      var win = p.window || 2;
+      var matched = false, t0 = performance.now();
+
+      A.value = p.amplitude != null ? p.amplitude : 0.5;
+      F.value = p.frequency != null ? p.frequency : 1;
+      PH.value = p.phase || 0;
+      if (!p.showPhase) document.querySelectorAll('.ph').forEach(function (e) { e.classList.add('hide'); });
+      $('goal').textContent = target ? 'Match the dashed wave by moving the sliders' : 'Move the sliders and watch the wave change';
+
+      // ---------- sound: the wave you see, sped up ×110 so it's audible
+      var audio = null;
+      function sound() {
+        if (!audio) return;
+        var now = audio.ctx.currentTime;
+        audio.osc.frequency.setTargetAtTime(Number(F.value) * 110, now, 0.03);
+        audio.gain.gain.setTargetAtTime(Number(A.value) * 0.25, now, 0.03);
+      }
+      $('hear').onclick = function () {
+        if (audio) { audio.ctx.close(); audio = null; this.setAttribute('aria-pressed', 'false'); this.textContent = '🔊 Hear it'; return; }
+        var ac = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = ac.createOscillator(), g = ac.createGain();
+        g.gain.value = 0; osc.connect(g).connect(ac.destination); osc.start();
+        audio = { ctx: ac, osc: osc, gain: g };
+        this.setAttribute('aria-pressed', 'true'); this.textContent = '🔇 Stop sound';
+        sound();
+      };
+
+      function readout() {
+        var a = Number(A.value), f = Number(F.value), ph = Number(PH.value);
+        $('Ao').textContent = a.toFixed(2);
+        $('fo').textContent = f.toFixed(1) + ' Hz';
+        $('po').textContent = ph + '°';
+        $('eq').innerHTML = 'y = <span class="a">' + a.toFixed(2) + '</span>·sin(2π·<span class="f">' + f.toFixed(1) + '</span>t' +
+          (p.showPhase ? ' + <span class="p">' + ph + '°</span>' : '') + ')';
+        sound();
+        if (target && !matched &&
+            Math.abs(a - target.amplitude) <= tol.amplitude &&
+            Math.abs(f - target.frequency) <= tol.frequency) {
+          matched = true;
+          $('status').className = 'status win';
+          $('status').textContent = '✓ Matched! A = ' + target.amplitude + ', f = ' + target.frequency + ' Hz';
+          $('go').classList.add('ready');
+          ToyBox.log({ matched: true, seconds: Math.round((performance.now() - t0) / 1000) });
+        } else if (target && !matched) {
+          var hints = [];
+          if (Math.abs(a - target.amplitude) > tol.amplitude) hints.push(a < target.amplitude ? 'taller' : 'shorter');
+          if (Math.abs(f - target.frequency) > tol.frequency) hints.push(f < target.frequency ? 'more cycles' : 'fewer cycles');
+          $('status').textContent = 'Hint: ' + hints.join(' and ');
+        }
+      }
+      [A, F, PH].forEach(function (el) { el.addEventListener('input', readout); });
+      readout();
+
+      $('go').onclick = function () {
+        if (audio) audio.ctx.close();
+        ToyBox.complete({ matched: matched, amplitude: Number(A.value), frequency: Number(F.value), seconds: Math.round((performance.now() - t0) / 1000) });
+      };
+
+      // ---------- drawing
+      function draw(now) {
+        var dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+        if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+        var pad = 10, yc = h / 2, amp = h / 2 - pad - 4, scroll = (now / 1000) * 0.25;
+        // grid
+        ctx.strokeStyle = C('grid'); ctx.lineWidth = 1;
+        for (var gx = 0; gx <= win * 4; gx++) { var x = pad + (w - 2 * pad) * gx / (win * 4); ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, h - pad); ctx.stroke(); }
+        for (var gy = -2; gy <= 2; gy++) { var y = yc - amp * gy / 2; ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke(); }
+        ctx.strokeStyle = C('muted', 0.6); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(pad, yc); ctx.lineTo(w - pad, yc); ctx.stroke();
+        ctx.fillStyle = C('muted'); ctx.font = '11px ' + ToyBox.theme.font; ctx.textAlign = 'right';
+        ctx.fillText(win + ' s →', w - pad - 4, h - pad - 4);
+
+        function wave(a, f, ph, color, width, dash) {
+          ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash || []);
+          ctx.beginPath();
+          for (var i = 0; i <= 400; i++) {
+            var u = i / 400, x = pad + (w - 2 * pad) * u;
+            var y = yc - amp * a * Math.sin(2 * Math.PI * (f * win * u - scroll) + ph);
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          }
+          ctx.stroke(); ctx.setLineDash([]);
+        }
+        if (target) wave(target.amplitude, target.frequency, (target.phase || 0) * Math.PI / 180, matched ? C('success', 0.6) : C('text', 0.45), 2.5, [8, 7]);
+        wave(Number(A.value), Number(F.value), Number(PH.value) * Math.PI / 180, matched ? C('success') : C(1), 3.5);
+        requestAnimationFrame(draw);
+      }
+      requestAnimationFrame(draw);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "toybox/toy",
+  "title": "ToyBox",
+  "category": "media",
+  "icon": "art",
+  "description": "Show a toy (or a video with toys) from ToyBox.",
+  "keywords": ["toy", "interactive", "video"],
+  "textdomain": "toybox",
+  "attributes": {
+    "toyId": { "type": "number", "default": 0 }
+  },
+  "supports": { "html": false, "align": ["wide", "full"] },
+  "editorScript": "toybox-block"
+}
