@@ -38,7 +38,13 @@ const player = new ToyBoxPlayer($('player'), {
   onComplete: (r) => print(`${fmt(r.at)}  complete  ${JSON.stringify(r.result)}`),
   onLog: (_c, d) => print(`log       ${JSON.stringify(d)}`),
 });
-player.setLesson({ title: 'Playground', video: 'media/demo.mp4', cues: [] }, new URL('./', location.href).href);
+const videoInput = $<HTMLInputElement>('f-video');
+const setVideo = () => player.setLesson({ title: 'Playground', video: videoInput.value.trim() || 'media/demo.mp4', cues: [] }, new URL('./', location.href).href);
+setVideo();
+videoInput.addEventListener('change', () => {
+  setVideo();
+  run();
+});
 
 const standalone = new StandaloneToy($('standalone'), {
   sdkUrl,

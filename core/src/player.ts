@@ -1,4 +1,5 @@
 import { ToyFrame } from './toyHost';
+import { createMedia, type PlayerMedia } from './media';
 import { applyTheme, type Theme } from './theme';
 import type { CompletionRecord, Cue, Lesson, ToyMessage } from './types';
 
@@ -14,13 +15,19 @@ export interface PlayerOptions {
 }
 
 /**
- * The ToyBox player: a <video> with a transparent overlay layer that mounts
- * toys (sandboxed iframes) while the playhead is inside each cue's time range.
+ * The ToyBox player: a video (file, YouTube or Vimeo) with a transparent overlay
+ * layer that mounts toys (sandboxed iframes) while the playhead is inside each
+ * cue's time range.
  */
 export class ToyBoxPlayer {
   readonly root: HTMLElement;
-  readonly video: HTMLVideoElement;
+  /** The current video source (null until a lesson is set). */
+  media: PlayerMedia | null = null;
+  private mediaSrc = '';
+  private stage: HTMLElement;
+  private shield: HTMLElement;
   private overlay: HTMLElement;
+  private looping = false;
   private markers: HTMLElement;
   private scrub: HTMLInputElement;
   private timeLabel: HTMLElement;
@@ -37,7 +44,7 @@ export class ToyBoxPlayer {
     container.innerHTML = `
       <div class="tb-player">
         <div class="tb-stage">
-          <video playsinline preload="auto"></video>
+          <div class="tb-shield"></div>
           <div class="tb-overlay"></div>
         </div>
         <div class="tb-controls">
@@ -52,7 +59,8 @@ export class ToyBoxPlayer {
       </div>`;
     const q = <T extends Element>(s: string) => container.querySelector(s) as T;
     this.root = q('.tb-player');
-    this.video = q('video');
+    this.stage = q('.tb-stage');
+    this.shield = q('.tb-shield');
     this.overlay = q('.tb-overlay');
     this.markers = q('.tb-markers');
     this.scrub = q('.tb-scrub');
@@ -61,7 +69,11 @@ export class ToyBoxPlayer {
 
     if (opts.theme) applyTheme(opts.theme, this.root);
     this.wireControls(q('.tb-fs'));
-    this.startClock();
+  }
+
+  /** The video source; kept as `video` for older callers. */
+  get video(): PlayerMedia {
+    return this.media ?? EMPTY_MEDIA;
   }
 
   async loadLesson(url: string) {
@@ -76,8 +88,8 @@ export class ToyBoxPlayer {
   setLesson(lesson: Lesson, baseUrl = location.href) {
     this.baseUrl = baseUrl;
     const src = new URL(lesson.video, baseUrl).href;
-    if (this.video.src !== src) this.video.src = src;
-    if (lesson.poster) this.video.poster = new URL(lesson.poster, baseUrl).href;
+    if (this.mediaSrc !== src) this.setMedia(createMedia(src), src);
+    if (lesson.poster && this.media?.el instanceof HTMLVideoElement) this.media.el.poster = new URL(lesson.poster, baseUrl).href;
     this.setCues(lesson.cues);
   }
 
@@ -98,43 +110,65 @@ export class ToyBoxPlayer {
   }
 
   play() {
-    return this.video.play().catch(() => {});
+    return this.media?.play() ?? Promise.resolve();
   }
   pause() {
-    this.video.pause();
+    this.media?.pause();
   }
   seek(t: number) {
-    const d = this.video.duration || Infinity;
-    this.video.currentTime = Math.max(0, Math.min(t, d));
+    if (!this.media) return;
+    const d = this.media.duration || Infinity;
+    this.media.currentTime = Math.max(0, Math.min(t, d));
+    this.sync();
+  }
+
+  /** Stop and remove the video and toys (e.g. when the player leaves the page). */
+  destroy() {
+    for (const t of this.active.values()) t.destroy();
+    this.active.clear();
+    this.media?.destroy();
+    this.media = null;
+    this.root.remove();
   }
 
   // ---- internals -------------------------------------------------------
 
-  private startClock() {
-    // requestVideoFrameCallback fires once per presented frame, so toys appear
-    // on the exact frame. Fall back to requestAnimationFrame where unsupported.
-    const v = this.video as HTMLVideoElement & {
-      requestVideoFrameCallback?: (cb: () => void) => number;
+  private setMedia(media: PlayerMedia, src: string) {
+    this.media?.destroy();
+    this.media = media;
+    this.mediaSrc = src;
+    this.root.dataset.media = media.kind;
+    this.stage.insertBefore(media.el, this.shield);
+    for (const ev of ['seeked', 'pause', 'loadedmetadata', 'durationchange', 'timeupdate', 'ended']) media.addEventListener(ev, () => this.sync());
+    media.addEventListener('loadedmetadata', () => this.renderMarkers());
+    media.addEventListener('durationchange', () => this.renderMarkers());
+    media.addEventListener('play', () => this.startLoop());
+    if (!media.paused) this.startLoop();
+    this.sync();
+  }
+
+  /**
+   * Runs sync() every frame while the video plays (and stops when it pauses, so
+   * idle players on a course page cost nothing). Uses requestVideoFrameCallback
+   * for video files, so toys appear on the exact frame.
+   */
+  private startLoop() {
+    if (this.looping) return;
+    this.looping = true;
+    const v = this.media?.el as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
+    const next = (fn: () => void) => (v?.requestVideoFrameCallback ? v.requestVideoFrameCallback(fn) : requestAnimationFrame(fn));
+    const tick = () => {
+      this.sync();
+      if (this.media && !this.media.paused) next(tick);
+      else this.looping = false;
     };
-    if (v.requestVideoFrameCallback) {
-      const loop = () => {
-        this.sync();
-        v.requestVideoFrameCallback!(loop);
-      };
-      v.requestVideoFrameCallback(loop);
-      // rVFC doesn't fire while paused, so also sync on these events.
-      for (const ev of ['seeked', 'pause', 'loadedmetadata', 'timeupdate']) v.addEventListener(ev, () => this.sync());
-    } else {
-      const loop = () => {
-        this.sync();
-        requestAnimationFrame(loop);
-      };
-      requestAnimationFrame(loop);
-    }
+    next(tick);
   }
 
   private sync() {
-    const t = this.video.currentTime;
+    const m = this.media;
+    if (!m) return;
+    const t = m.currentTime;
 
     for (const cue of this.cues) {
       const inside = t >= cue.start && t < cue.end;
@@ -151,7 +185,7 @@ export class ToyBoxPlayer {
     if (now - this.lastTimePost > 250) {
       this.lastTimePost = now;
       for (const toy of this.active.values()) {
-        toy.post({ type: 'time', time: t, duration: this.video.duration || 0, paused: this.video.paused });
+        toy.post({ type: 'time', time: t, duration: m.duration || 0, paused: m.paused });
       }
     }
     this.renderControls();
@@ -170,7 +204,7 @@ export class ToyBoxPlayer {
     Object.assign(toy.el.style, { left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%` });
     this.overlay.appendChild(toy.el);
     this.active.set(cue.id, toy);
-    if (cue.pause && !this.video.paused) this.video.pause();
+    if (cue.pause && this.media && !this.media.paused) this.media.pause();
   }
 
   private onToyMessage(msg: ToyMessage, cue: Cue) {
@@ -185,7 +219,7 @@ export class ToyBoxPlayer {
         this.seek(msg.time);
         break;
       case 'complete':
-        this.opts.onComplete?.({ cueId: cue.id, label: cue.label, at: this.video.currentTime, result: msg.result });
+        this.opts.onComplete?.({ cueId: cue.id, label: cue.label, at: this.media?.currentTime ?? 0, result: msg.result });
         if (cue.resumeOnComplete) this.play();
         break;
       case 'log':
@@ -195,13 +229,14 @@ export class ToyBoxPlayer {
   }
 
   private wireControls(fsBtn: HTMLButtonElement) {
-    const v = this.video;
-    this.playBtn.onclick = () => (v.paused ? this.play() : this.pause());
-    v.addEventListener('click', () => (v.paused ? this.play() : this.pause()));
+    const toggle = () => (this.video.paused ? this.play() : this.pause());
+    this.playBtn.onclick = toggle;
+    // A click-catcher over the video: toggles play, and stops YouTube/Vimeo
+    // grabbing clicks (and their own UI) under ToyBox's controls.
+    this.shield.addEventListener('click', toggle);
     this.scrub.oninput = () => {
-      if (v.duration) this.seek((Number(this.scrub.value) / 1000) * v.duration);
+      if (this.video.duration) this.seek((Number(this.scrub.value) / 1000) * this.video.duration);
     };
-    v.addEventListener('loadedmetadata', () => this.renderMarkers());
     // Fullscreen the whole player (not just <video>) so toys come along.
     fsBtn.onclick = () => {
       if (document.fullscreenElement) document.exitFullscreen();
@@ -212,9 +247,9 @@ export class ToyBoxPlayer {
       if (e.target !== this.root) return;
       if (e.key === ' ' || e.key === 'k') {
         e.preventDefault();
-        v.paused ? this.play() : this.pause();
-      } else if (e.key === 'ArrowRight') this.seek(v.currentTime + 5);
-      else if (e.key === 'ArrowLeft') this.seek(v.currentTime - 5);
+        toggle();
+      } else if (e.key === 'ArrowRight') this.seek(this.video.currentTime + 5);
+      else if (e.key === 'ArrowLeft') this.seek(this.video.currentTime - 5);
     });
   }
 
@@ -243,6 +278,22 @@ export class ToyBoxPlayer {
     }
   }
 }
+
+/** Stand-in used before a lesson (and its video) is set. */
+const EMPTY_MEDIA: PlayerMedia = {
+  kind: 'file',
+  el: document.createElement('div'),
+  currentTime: 0,
+  duration: NaN,
+  paused: true,
+  readyState: 0,
+  muted: false,
+  play: () => Promise.resolve(),
+  pause: () => {},
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  destroy: () => {},
+};
 
 export function fmt(s: number) {
   if (!Number.isFinite(s)) s = 0;
