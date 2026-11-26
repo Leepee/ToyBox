@@ -27,6 +27,7 @@
         "notice": "",
         "canedit": true,
         "editurl": "https://example.com/mod/toybox/edit.php?id=1",
+        "viewurl": "https://example.com/mod/toybox/view.php?id=1",
         "notoys": false,
         "istoy": false,
         "configjson": "{}"
@@ -36,6 +37,7 @@
     {{#inline}}
         <div class="mod-toybox-inline-head">
             <h3 class="mod-toybox-inline-name">{{name}}</h3>
+            <a class="small mod-toybox-openfull" href="{{viewurl}}">{{#pix}} e/fullscreen, core {{/pix}}{{#str}} openfullpage, mod_toybox {{/str}}</a>
             {{#canedit}}<a class="small" href="{{editurl}}">{{#str}} edittoys, mod_toybox {{/str}}</a>{{/canedit}}
         </div>
     {{/inline}}

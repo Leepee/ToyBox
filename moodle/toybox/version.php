@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_toybox';
-$plugin->version   = 2026112802;
+$plugin->version   = 2026112803;
 $plugin->requires  = 2024042200; // Moodle 4.4.
 $plugin->supported = [404, 503];
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.3.2';
+$plugin->release   = '0.3.3';

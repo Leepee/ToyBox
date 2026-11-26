@@ -41,6 +41,8 @@
 .mod-toybox-inline .mod-toybox-stage { min-height: 120px; }
 .mod-toybox-inline-head { display: flex; align-items: baseline; gap: .75rem; margin-bottom: .5rem; }
 .mod-toybox-inline-name { font-size: 1.1rem; margin: 0; }
+.mod-toybox-openfull { margin-left: auto; white-space: nowrap; }
+.mod-toybox-openfull .icon { margin-right: .25rem; }
 .mod-toybox-embedpage #page, .mod-toybox-embedpage #region-main { padding: 0; margin: 0; }
 .mod-toybox-embedpage .mod-toybox-view { margin: 0; }
 /* Course formats size activity content to fit; make course-page ToyBoxes take the full width. */

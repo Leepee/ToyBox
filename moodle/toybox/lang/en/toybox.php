@@ -114,6 +114,7 @@ $string['notoysyet_editprompt'] = 'There are no toys yet.';
 $string['notoyyet'] = 'This activity isn\'t ready yet.';
 $string['notoyyet_teacher'] = 'This activity has no toy yet. Use "Edit toys" to make one.';
 $string['novideo'] = 'This activity has no video yet.';
+$string['openfullpage'] = 'Open full page';
 $string['optional'] = 'optional';
 $string['pluginadministration'] = 'ToyBox administration';
 $string['pluginname'] = 'ToyBox';

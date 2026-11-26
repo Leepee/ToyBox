@@ -159,6 +159,7 @@ class toys {
             'notice' => $notice,
             'canedit' => $canedit,
             'editurl' => $editurl->out(false),
+            'viewurl' => (new moodle_url('/mod/toybox/view.php', ['id' => $cm->id]))->out(false),
             'notoys' => !$toylist,
             'istoy' => $toybox->mode === 'toy',
             'configjson' => json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
