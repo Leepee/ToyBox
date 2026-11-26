@@ -5,8 +5,10 @@ name: Moodle plugin
 # "Artifacts"). Tagging vX.Y.Z also attaches the zip to a GitHub release.
 on:
   push:
-    paths: ['moodle/**', 'core/**', 'scripts/build-moodle.mjs', 'scripts/sync-core.mjs', '.github/workflows/moodle-plugin.yml']
+    # Listing tags alone would stop branch pushes triggering this, so list both.
+    branches: ['**']
     tags: ['v*']
+    paths: ['moodle/**', 'core/**', 'scripts/build-moodle.mjs', 'scripts/sync-core.mjs', '.github/workflows/moodle-plugin.yml']
   pull_request:
     paths: ['moodle/**', 'core/**']
   workflow_dispatch:
