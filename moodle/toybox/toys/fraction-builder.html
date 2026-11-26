@@ -5,26 +5,26 @@
   <title>Fraction builder</title>
   <script src="../toybox-sdk.js"></script>
   <style>
-    :root { font-family: system-ui, sans-serif; color: #0f172a; }
+    :root { font-family: var(--tb-font); color: var(--tb-text); }
     html, body { margin: 0; height: 100%; background: transparent; }
     .card {
       box-sizing: border-box; height: 100%; padding: 4% 5%;
-      background: #fff; border-radius: 16px; box-shadow: 0 10px 30px #0006;
+      background: var(--tb-surface); border: 1px solid var(--tb-border); border-radius: var(--tb-radius); box-shadow: var(--tb-shadow);
       display: flex; flex-direction: column; gap: 4%; justify-content: center;
     }
     h1 { font-size: clamp(14px, 4.5vw, 26px); margin: 0; }
     .bar { display: flex; gap: 4px; height: 26%; }
     .bar button {
-      flex: 1; border: 2px solid #1e3a8a; border-radius: 8px; background: #e0e7ff;
+      flex: 1; border: 2px solid var(--tb-c2); border-radius: calc(var(--tb-radius) * 0.6); background: color-mix(in srgb, var(--tb-c2) 10%, var(--tb-surface));
       cursor: pointer; transition: background .15s, transform .1s;
     }
-    .bar button[aria-pressed="true"] { background: #f59e0b; border-color: #b45309; }
+    .bar button[aria-pressed="true"] { background: var(--tb-accent); border-color: color-mix(in srgb, var(--tb-accent) 70%, black); }
     .bar button:active { transform: scale(.96); }
     .row { display: flex; align-items: center; gap: 12px; }
     .frac { font-size: clamp(16px, 5vw, 30px); font-weight: 700; min-width: 3em; }
-    .check { padding: .5em 1.2em; font-size: clamp(12px, 3vw, 18px); border: 0; border-radius: 999px; background: #1e3a8a; color: #fff; cursor: pointer; }
+    .check { padding: .5em 1.2em; font-size: clamp(12px, 3vw, 18px); border: 0; border-radius: var(--tb-button-radius); background: var(--tb-primary); color: var(--tb-on-primary); cursor: pointer; font-family: inherit; }
     .msg { font-size: clamp(12px, 3.2vw, 18px); min-height: 1.4em; }
-    .ok { color: #15803d; } .no { color: #b91c1c; }
+    .ok { color: var(--tb-success); } .no { color: var(--tb-danger); }
   </style>
 </head>
 <body>

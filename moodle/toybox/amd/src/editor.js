@@ -60,7 +60,8 @@ var ToyFrame = class {
         type: "init",
         params: (_a = s.params) != null ? _a : {},
         cue: { id: s.id, start: (_b = s.start) != null ? _b : 0, end: (_c = s.end) != null ? _c : 0 },
-        hasVideo: this.opts.hasVideo
+        hasVideo: this.opts.hasVideo,
+        theme: this.opts.theme
       });
       for (const m of this.queue.splice(0)) this.post(m);
     }
@@ -107,6 +108,245 @@ function prepareToyHtml(html, sdkUrl, lockdown = true) {
   return head + out;
 }
 
+// core/src/theme.ts
+var THEMES = {
+  toybox: {
+    id: "toybox",
+    name: "ToyBox (dark)",
+    mode: "dark",
+    font: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    page: "#0b0f17",
+    surface: "#0b1020",
+    surfaceAlt: "#070b17",
+    text: "#e5e7eb",
+    muted: "#94a3b8",
+    border: "rgba(255, 255, 255, 0.15)",
+    grid: "#1a223c",
+    primary: "#1e3a8a",
+    onPrimary: "#ffffff",
+    accent: "#f59e0b",
+    link: "#7aa2ff",
+    success: "#4ade80",
+    warning: "#f59e0b",
+    danger: "#f87171",
+    palette: ["#f59e0b", "#22d3ee", "#f472b6", "#a78bfa", "#4ade80", "#60a5fa"],
+    radius: "16px",
+    buttonRadius: "999px",
+    shadow: "0 12px 40px rgba(0, 0, 0, 0.65)",
+    band: "#121826",
+    onBand: "#e5e7eb",
+    promptNotes: "Dark, playful lab style: deep navy cards, light text, bright accent colours for data, rounded pill buttons."
+  },
+  solent: {
+    id: "solent",
+    name: "Solent University",
+    mode: "light",
+    font: '"PT Sans", "Open Sans", Calibri, "Trebuchet MS", sans-serif',
+    fontFaces: [
+      { family: "PT Sans", weight: "400", url: "fonts/pt-sans-400.woff2" },
+      { family: "PT Sans", weight: "700", url: "fonts/pt-sans-700.woff2" }
+    ],
+    page: "#ced4da",
+    surface: "#ffffff",
+    surfaceAlt: "#f8f9fa",
+    text: "#1d2125",
+    muted: "#6a737b",
+    border: "#dee2e6",
+    grid: "#e9ecef",
+    primary: "#425b6c",
+    onPrimary: "#ffffff",
+    accent: "#b0111f",
+    link: "#175d82",
+    success: "#357a32",
+    warning: "#b45309",
+    danger: "#ca3120",
+    // Solent brand colours that stay readable on white.
+    palette: ["#b0111f", "#175d82", "#1c8276", "#9243f4", "#ff4d00", "#3f4254"],
+    radius: "8px",
+    buttonRadius: "8px",
+    shadow: "0 2px 8px rgba(63, 66, 84, 0.18)",
+    band: "#3f4254",
+    onBand: "#f8f9fa",
+    promptNotes: [
+      "Match Solent University (Solent Online Learning):",
+      "- Clean, light and accessible. White cards with a 1px light-grey border and 8px corners; plenty of white space.",
+      "- PT Sans for everything. Headings bold and in sentence case; body text plain, friendly UK English.",
+      "- Navy (#3F4254) for headings, title bands and strong text. Slate blue (#425B6C) buttons with white text.",
+      "- Solent red (#B0111F) is the brand highlight: use it sparingly for the one thing to notice (a target, a key number, a focus ring), never for big backgrounds.",
+      "- For several data series use the palette in order: red, sea blue (#175D82), teal (#1C8276), purple, orange, navy.",
+      "- No gradients, glows, neon or emoji-heavy decoration. Simple line icons only."
+    ].join("\n")
+  }
+};
+function themeVars(t) {
+  const v = {
+    "--tb-font": t.font,
+    "--tb-page": t.page,
+    "--tb-surface": t.surface,
+    "--tb-surface-alt": t.surfaceAlt,
+    "--tb-text": t.text,
+    "--tb-muted": t.muted,
+    "--tb-border": t.border,
+    "--tb-grid": t.grid,
+    "--tb-primary": t.primary,
+    "--tb-on-primary": t.onPrimary,
+    "--tb-accent": t.accent,
+    "--tb-link": t.link,
+    "--tb-success": t.success,
+    "--tb-warning": t.warning,
+    "--tb-danger": t.danger,
+    "--tb-radius": t.radius,
+    "--tb-button-radius": t.buttonRadius,
+    "--tb-shadow": t.shadow,
+    "--tb-band": t.band,
+    "--tb-on-band": t.onBand
+  };
+  t.palette.forEach((c, i) => v[`--tb-c${i + 1}`] = c);
+  return v;
+}
+function applyTheme(t, el2 = document.documentElement) {
+  var _a, _b;
+  for (const [k, val] of Object.entries(themeVars(t))) el2.style.setProperty(k, val);
+  el2.dataset.tbTheme = t.id;
+  el2.dataset.tbMode = t.mode;
+  el2.style.colorScheme = t.mode;
+  if (((_a = t.fontFaces) == null ? void 0 : _a.length) && el2 === document.documentElement) {
+    const id = "tb-theme-fonts";
+    (_b = document.getElementById(id)) == null ? void 0 : _b.remove();
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = t.fontFaces.map((f) => {
+      var _a2;
+      return `@font-face{font-family:"${f.family}";font-weight:${f.weight};font-style:${(_a2 = f.style) != null ? _a2 : "normal"};font-display:swap;src:url("${f.url}")}`;
+    }).join("\n");
+    document.head.appendChild(style);
+  }
+}
+var fontCache = /* @__PURE__ */ new Map();
+async function resolveThemeFonts(t, baseUrl) {
+  var _a;
+  if (!((_a = t.fontFaces) == null ? void 0 : _a.length)) return t;
+  const faces = await Promise.all(
+    t.fontFaces.map(async (f) => {
+      if (f.url.startsWith("data:")) return f;
+      const abs = new URL(f.url, baseUrl).href;
+      if (!fontCache.has(abs)) {
+        fontCache.set(
+          abs,
+          fetch(abs).then((r) => r.ok ? r.blob() : Promise.reject()).then(
+            (blob) => new Promise((res, rej) => {
+              const fr = new FileReader();
+              fr.onload = () => res(String(fr.result));
+              fr.onerror = rej;
+              fr.readAsDataURL(blob);
+            })
+          ).catch(() => null)
+        );
+      }
+      const data = await fontCache.get(abs);
+      return data ? { ...f, url: data } : null;
+    })
+  );
+  return { ...t, fontFaces: faces.filter(Boolean) };
+}
+function toHex(c) {
+  const m = c.trim().match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+%?))?\s*\)$/i);
+  if (!m) return c.trim();
+  if (m[4] !== void 0 && parseFloat(m[4]) < (m[4].endsWith("%") ? 100 : 1)) return c.trim();
+  return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
+}
+function themeFromPage(base = THEMES.toybox) {
+  var _a, _b;
+  const root = getComputedStyle(document.documentElement);
+  const body = getComputedStyle(document.body);
+  const v = (...names) => {
+    var _a2;
+    return (_a2 = names.map((n) => root.getPropertyValue(n).trim()).find(Boolean)) != null ? _a2 : "";
+  };
+  const probe = (cls, prop) => {
+    const el2 = document.createElement(cls.startsWith("a") ? "a" : "div");
+    el2.className = cls.replace(/^a\./, "");
+    if (cls.startsWith("a")) el2.setAttribute("href", "#");
+    el2.style.position = "absolute";
+    el2.style.visibility = "hidden";
+    document.body.appendChild(el2);
+    const out = getComputedStyle(el2).getPropertyValue(prop);
+    el2.remove();
+    return out;
+  };
+  const primary = toHex(v("--bs-primary", "--primary") || probe("btn btn-primary", "background-color") || base.primary);
+  const family = body.fontFamily.split(",")[0].replace(/["']/g, "").trim();
+  const faces = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue;
+    }
+    for (const r of Array.from(rules)) {
+      if (!(r instanceof CSSFontFaceRule)) continue;
+      const fam = r.style.getPropertyValue("font-family").replace(/["']/g, "").trim();
+      const src = (_a = r.style.getPropertyValue("src").match(/url\(["']?([^"')]+)["']?\)/)) == null ? void 0 : _a[1];
+      if (fam === family && src && faces.length < 4) {
+        const url = new URL(src, (_b = sheet.href) != null ? _b : location.href);
+        if (url.origin === location.origin) faces.push({ family: fam, weight: r.style.getPropertyValue("font-weight") || "400", url: url.href });
+      }
+    }
+  }
+  const text = toHex(body.color || base.text);
+  const pageBg = body.backgroundColor && body.backgroundColor !== "rgba(0, 0, 0, 0)" ? body.backgroundColor : "#ffffff";
+  const success = toHex(v("--bs-success", "--success") || base.success);
+  const info = toHex(v("--bs-info", "--info") || base.link);
+  const danger = toHex(v("--bs-danger", "--danger") || base.danger);
+  const warning = toHex(v("--bs-warning", "--warning") || base.warning);
+  const link = toHex(probe("a.", "color") || primary);
+  const palette = [];
+  for (const c of [primary, danger, success, info, warning, link, ...base.palette].map(toHex)) {
+    if (!palette.some((p) => p.toLowerCase() === c.toLowerCase()) && palette.length < 6) palette.push(c);
+  }
+  return {
+    id: "site",
+    name: "This site",
+    mode: "light",
+    font: body.fontFamily || base.font,
+    fontFaces: faces,
+    page: v("--bs-gray-200", "--gray-200") || "#e9ecef",
+    surface: toHex(pageBg),
+    surfaceAlt: v("--bs-light", "--light") || "#f8f9fa",
+    text,
+    muted: v("--bs-secondary-color", "--bs-gray-600", "--gray-600") || "#6c757d",
+    border: v("--bs-border-color", "--gray-300") || "#dee2e6",
+    grid: v("--bs-gray-200", "--gray-200") || "#e9ecef",
+    primary,
+    onPrimary: toHex(probe("btn btn-primary", "color") || "#ffffff"),
+    accent: danger,
+    link,
+    success,
+    warning,
+    danger,
+    palette,
+    radius: v("--bs-border-radius-lg", "--bs-border-radius") || "8px",
+    buttonRadius: v("--bs-border-radius") || "6px",
+    shadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+    band: v("--bs-dark", "--dark") || "#343a40",
+    onBand: "#ffffff",
+    promptNotes: `Match this learning site: font ${family || "system"}, buttons in ${primary} with ${"white"} text, text ${text}, links ${link}. Light, clean cards with rounded corners. Use the brand colour sparingly for highlights.`
+  };
+}
+function themePromptSection(t) {
+  const vars = themeVars(t);
+  return [
+    "## Look and feel",
+    t.promptNotes,
+    "",
+    "Use the ToyBox theme variables (already set for you inside the toy) instead of hard-coded colours, with these values as fallbacks:",
+    "```css",
+    ...Object.entries(vars).map(([k, v]) => `${k}: ${v};`),
+    "```"
+  ].join("\n");
+}
+
 // core/src/player.ts
 var ToyBoxPlayer = class {
   constructor(container, opts = {}) {
@@ -149,6 +389,7 @@ var ToyBoxPlayer = class {
     this.scrub = q(".tb-scrub");
     this.timeLabel = q(".tb-time");
     this.playBtn = q(".tb-play");
+    if (opts.theme) applyTheme(opts.theme, this.root);
     this.wireControls(q(".tb-fs"));
     this.startClock();
   }
@@ -168,6 +409,12 @@ var ToyBoxPlayer = class {
     this.setCues(lesson.cues);
   }
   /** Replace the cue list (used live by the playground). */
+  /** Switch theme: restyles the controls and reloads visible toys with the new theme. */
+  setTheme(theme) {
+    this.opts.theme = theme;
+    applyTheme(theme, this.root);
+    this.setCues(this.cues);
+  }
   setCues(cues) {
     for (const t of this.active.values()) t.destroy();
     this.active.clear();
@@ -230,6 +477,7 @@ var ToyBoxPlayer = class {
       sdkUrl: this.sdkUrl,
       hasVideo: true,
       lockdown: this.opts.lockdown,
+      theme: this.opts.theme,
       emit: (m) => this.onToyMessage(m, cue)
     });
     const { x, y, w, h } = cue.rect;
@@ -341,6 +589,7 @@ var StandaloneToy = class {
       sdkUrl: this.opts.sdkUrl,
       hasVideo: false,
       lockdown: this.opts.lockdown,
+      theme: this.opts.theme,
       emit: (msg) => {
         var _a3, _b2, _c, _d;
         if (msg.type === "complete") (_b2 = (_a3 = this.opts).onComplete) == null ? void 0 : _b2.call(_a3, { cueId: spec.id, label: spec.label, at: 0, result: msg.result });
@@ -352,6 +601,10 @@ var StandaloneToy = class {
     this.root.appendChild(frame.el);
     this.frame = frame;
   }
+  /** Use a different theme from the next show(). */
+  setTheme(theme) {
+    this.opts.theme = theme;
+  }
   destroy() {
     var _a;
     (_a = this.frame) == null ? void 0 : _a.destroy();
@@ -361,6 +614,7 @@ var StandaloneToy = class {
 
 // core/src/lint.ts
 function lintToy(html, ctx = {}) {
+  var _a;
   const out = [];
   const add = (level, message) => out.push({ level, message });
   const code = html != null ? html : "";
@@ -397,14 +651,28 @@ function lintToy(html, ctx = {}) {
     add("warning", "Forms can\u2019t be submitted. Handle button clicks in JavaScript instead.");
   if (ctx.mode === "toy" && ctx.autoHeight && /100vh/.test(code))
     add("warning", "With \u201Cfit content\u201D sizing, don\u2019t use 100vh heights. Let the content set the height, or pick a fixed shape.");
+  const hexes = new Set(((_a = code.match(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g)) != null ? _a : []).map((h) => h.toLowerCase()));
+  if (hexes.size >= 4 && !/var\(--tb-/.test(code))
+    add("tip", `It uses ${hexes.size} fixed colours. Use the theme variables (var(--tb-primary), var(--tb-surface)\u2026 and ToyBox.color() on a canvas) so it matches your institution's look.`);
   if (/\b(width|height)\s*:\s*(\d{4,})px/.test(code))
     add("tip", "Some sizes are very large fixed pixels. Use %, vw/vh or flex/grid so the toy fits any screen.");
   return out;
 }
 
 // core/src/aiPrompt.ts
+function guideWithTheme(guide, theme) {
+  if (!theme) return guide;
+  return `${guide.trim()}
+
+---
+
+# This institution's style (${theme.name})
+
+${themePromptSection(theme).replace(/^## Look and feel\n/, "")}
+`;
+}
 var mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-function buildAiPrompt(guide, ctx) {
+function buildAiPrompt(guide, ctx, theme) {
   var _a, _b, _c;
   const facts = [];
   if (ctx.mode === "toy") {
@@ -451,7 +719,7 @@ function buildAiPrompt(guide, ctx) {
 
 ## This toy
 ${facts.join("\n")}
-
+${theme ? "\n" + themePromptSection(theme) + "\n" : ""}
 ${ask}
 
 Please reply with the complete toy as **one HTML file** in a single code block, then the settings JSON (params) in a second code block, then 2\u20133 sentences on how a learner uses it.
@@ -464,13 +732,16 @@ var STARTER = `<!doctype html>
 <head>
   <script src="toybox-sdk.js"><\/script>
   <style>
-    body { margin: 0; font-family: system-ui, sans-serif; }
-    .card { height: 100vh; box-sizing: border-box; padding: 5%; background: #fff; border-radius: 16px;
+    /* The --tb-\u2026 variables come from the ToyBox theme (your institution's colours and font). */
+    body { margin: 0; font-family: var(--tb-font); color: var(--tb-text); }
+    .card { height: 100vh; box-sizing: border-box; padding: 5%; background: var(--tb-surface);
+            border: 1px solid var(--tb-border); border-radius: var(--tb-radius);
             display: flex; flex-direction: column; justify-content: center; gap: 6%; }
     h1 { margin: 0; font-size: 6vw; }
-    input { width: 100%; accent-color: #f59e0b; }
+    input { width: 100%; accent-color: var(--tb-accent); }
     .ends { display: flex; justify-content: space-between; font-weight: 700; }
-    button { align-self: start; padding: .5em 1.2em; border: 0; border-radius: 99px; background: #1e3a8a; color: #fff; }
+    button { align-self: start; padding: .5em 1.2em; border: 0; border-radius: var(--tb-button-radius);
+             background: var(--tb-primary); color: var(--tb-on-primary); font: inherit; }
   </style>
 </head>
 <body>
@@ -510,7 +781,7 @@ var EXAMPLES = [
   {
     file: "toys/quiz.html",
     name: "Quiz",
-    params: { question: "Which is bigger?", options: ["3/4", "5/8"], answer: 0, explain: "3/4 = 6/8.", rewatchAt: 0, theme: "dark" },
+    params: { question: "Which is bigger?", options: ["3/4", "5/8"], answer: 0, explain: "3/4 = 6/8.", rewatchAt: 0 },
     rect: { x: 22, y: 20, w: 56, h: 58 },
     pause: true
   },
@@ -535,6 +806,10 @@ function fromServer(toys) {
     return { ...t, id: String(t.id), params: (_a = t.params) != null ? _a : {} };
   });
 }
+async function loadTheme(id, sdkUrl) {
+  if (id === "auto" || !THEMES[id]) return resolveThemeFonts(themeFromPage(THEMES.solent), location.href);
+  return resolveThemeFonts(THEMES[id], sdkUrl);
+}
 function el(tag, attrs = {}, ...kids) {
   const [name, ...classes] = tag.split(".");
   const node = document.createElement(name);
@@ -552,10 +827,11 @@ function el(tag, attrs = {}, ...kids) {
 
 // moodle/src/editor.ts
 var newCounter = 0;
-var init = (selector) => {
+var init = async (selector) => {
   const root = document.querySelector(selector);
   if (!root) return;
   const cfg = readConfig(root);
+  const theme = await loadTheme(cfg.theme, cfg.sdkUrl);
   const S = cfg.strings;
   const isVideo = cfg.mode === "video";
   let toys = fromServer(cfg.toys);
@@ -610,6 +886,7 @@ var init = (selector) => {
   if (isVideo) {
     player = new ToyBoxPlayer(stage, {
       sdkUrl: cfg.sdkUrl,
+      theme,
       onComplete: (r) => print(`${fmt(r.at)}  complete  ${JSON.stringify(r.result)}`),
       onLog: (_c, d) => print(`log  ${JSON.stringify(d)}`)
     });
@@ -618,6 +895,7 @@ var init = (selector) => {
   } else {
     standalone = new StandaloneToy(stage, {
       sdkUrl: cfg.sdkUrl,
+      theme,
       onComplete: (r) => print(`complete  ${JSON.stringify(r.result)}`),
       onLog: (_s, d) => print(`log  ${JSON.stringify(d)}`)
     });
@@ -779,7 +1057,7 @@ var init = (selector) => {
           params: fresh ? void 0 : t.params,
           existingHtml: fresh ? void 0 : t.html,
           issues: fresh ? void 0 : lintToy((_b2 = t.html) != null ? _b2 : "", { mode: cfg.mode, autoHeight: aspect === "auto" })
-        });
+        }, theme);
         await navigator.clipboard.writeText(prompt);
         addToast(S.promptcopied, { type: "success" });
       } catch (e) {
@@ -872,7 +1150,18 @@ var init = (selector) => {
         {},
         el("strong", { text: S.makewithai }),
         aiBtn,
-        el("a.btn.btn-outline-secondary", { href: cfg.guideUrl, download: "toybox-toy-guide.md", text: S.downloadguide }),
+        el("button.btn.btn-outline-secondary", {
+          type: "button",
+          text: S.downloadguide,
+          title: S.downloadguide_help,
+          onclick: async () => {
+            const guide = guideWithTheme(await (await fetch(cfg.guideUrl)).text(), theme);
+            const a = el("a", { href: URL.createObjectURL(new Blob([guide], { type: "text/markdown" })), download: "toybox-toy-guide.md" });
+            document.body.append(a);
+            a.click();
+            setTimeout(() => a.remove(), 1e3);
+          }
+        }),
         examples
       ),
       el("div.mod-toybox-field", {}, el("label", { for: "mod-toybox-html", text: S.toycode }), html),

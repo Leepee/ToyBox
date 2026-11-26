@@ -1,4 +1,5 @@
 import { ToyFrame } from './toyHost';
+import type { Theme } from './theme';
 import type { Aspect, CompletionRecord, ToySpec } from './types';
 
 export interface StandaloneOptions {
@@ -7,6 +8,7 @@ export interface StandaloneOptions {
   /** Box shape. 'auto' lets the toy set its own height via the SDK. */
   aspect?: Aspect;
   lockdown?: boolean;
+  theme?: Theme;
   onComplete?: (rec: CompletionRecord) => void;
   onLog?: (spec: ToySpec, data: unknown) => void;
 }
@@ -46,6 +48,7 @@ export class StandaloneToy {
       sdkUrl: this.opts.sdkUrl,
       hasVideo: false,
       lockdown: this.opts.lockdown,
+      theme: this.opts.theme,
       emit: (msg) => {
         if (msg.type === 'complete') this.opts.onComplete?.({ cueId: spec.id, label: spec.label, at: 0, result: msg.result });
         else if (msg.type === 'log') this.opts.onLog?.(spec, msg.data);
@@ -55,6 +58,11 @@ export class StandaloneToy {
     if (aspect === 'auto') frame.el.style.height = '320px'; // until the toy reports its size
     this.root.appendChild(frame.el);
     this.frame = frame;
+  }
+
+  /** Use a different theme from the next show(). */
+  setTheme(theme: Theme) {
+    this.opts.theme = theme;
   }
 
   destroy() {

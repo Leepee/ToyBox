@@ -30,6 +30,16 @@ Teachers write toys in HTML, or get an AI to write them: the toy editor's **Copy
 3. **Completion:** in the activity settings, choose *Add requirements → Learners must finish all required toys*. Each toy has a *Required for completion* tick box. ToyBox is not graded.
 4. **Results** (in the activity menu) shows who has finished which toy, and what each toy reported.
 
+## Look and feel
+
+*Site administration → Plugins → Activity modules → ToyBox → Look and feel* sets the colours and font of ToyBox players, editors and toys:
+
+- **Match this Moodle site** (default): reads the site theme's colours and font.
+- **Solent University**: PT Sans and Solent's palette.
+- **ToyBox (dark)**: the original dark look.
+
+The same look is described to AI assistants by **Copy AI prompt** and **Download toy guide**, so AI-made toys match it. Toys follow the look through CSS variables. Toys saved before version 0.2 keep their own colours until they're updated (for example, by picking the example again).
+
 ## Safety
 
 Toys are code written by teachers or AI, so they never run in the Moodle page itself:

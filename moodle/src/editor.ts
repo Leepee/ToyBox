@@ -4,14 +4,15 @@ import { add as addToast } from 'core/toast';
 import { ToyBoxPlayer, fmt } from '../../core/src/player';
 import { StandaloneToy } from '../../core/src/standalone';
 import { lintToy } from '../../core/src/lint';
-import { buildAiPrompt } from '../../core/src/aiPrompt';
+import { buildAiPrompt, guideWithTheme } from '../../core/src/aiPrompt';
 import { EXAMPLES, STARTER } from '../../core/src/examples';
-import { el, fromServer, readConfig, type Aspect, type MoodleToy } from './shared';
+import { el, fromServer, loadTheme, readConfig, type Aspect, type MoodleToy } from './shared';
 
 interface EditorConfig {
   cmid: number;
   mode: 'video' | 'toy';
   aspect: Aspect;
+  theme: string;
   videoUrl: string | null;
   sdkUrl: string;
   /** Base URL that 'toys/x.html' example paths resolve against (the plugin folder). */
@@ -26,10 +27,11 @@ let newCounter = 0;
 /**
  * The "Edit toys" page: code on the left, the real video (or the toy on its own) on the right.
  */
-export const init = (selector: string) => {
+export const init = async (selector: string) => {
   const root = document.querySelector(selector);
   if (!root) return;
   const cfg = readConfig<EditorConfig>(root);
+  const theme = await loadTheme(cfg.theme, cfg.sdkUrl);
   const S = cfg.strings;
   const isVideo = cfg.mode === 'video';
   let toys: MoodleToy[] = fromServer(cfg.toys);
@@ -87,6 +89,7 @@ export const init = (selector: string) => {
   if (isVideo) {
     player = new ToyBoxPlayer(stage, {
       sdkUrl: cfg.sdkUrl,
+      theme,
       onComplete: (r) => print(`${fmt(r.at)}  complete  ${JSON.stringify(r.result)}`),
       onLog: (_c, d) => print(`log  ${JSON.stringify(d)}`),
     });
@@ -95,6 +98,7 @@ export const init = (selector: string) => {
   } else {
     standalone = new StandaloneToy(stage, {
       sdkUrl: cfg.sdkUrl,
+      theme,
       onComplete: (r) => print(`complete  ${JSON.stringify(r.result)}`),
       onLog: (_s, d) => print(`log  ${JSON.stringify(d)}`),
     });
@@ -266,7 +270,7 @@ export const init = (selector: string) => {
           params: fresh ? undefined : t.params,
           existingHtml: fresh ? undefined : t.html,
           issues: fresh ? undefined : lintToy(t.html ?? '', { mode: cfg.mode, autoHeight: aspect === 'auto' }),
-        });
+        }, theme);
         await navigator.clipboard.writeText(prompt);
         addToast(S.promptcopied, { type: 'success' });
       } catch (e) {
@@ -361,7 +365,18 @@ export const init = (selector: string) => {
         {},
         el('strong', { text: S.makewithai }),
         aiBtn,
-        el('a.btn.btn-outline-secondary', { href: cfg.guideUrl, download: 'toybox-toy-guide.md', text: S.downloadguide }),
+        el('button.btn.btn-outline-secondary', {
+          type: 'button',
+          text: S.downloadguide,
+          title: S.downloadguide_help,
+          onclick: async () => {
+            const guide = guideWithTheme(await (await fetch(cfg.guideUrl)).text(), theme);
+            const a = el<'a'>('a', { href: URL.createObjectURL(new Blob([guide], { type: 'text/markdown' })), download: 'toybox-toy-guide.md' });
+            document.body.append(a);
+            a.click();
+            setTimeout(() => a.remove(), 1000);
+          },
+        }),
         examples,
       ),
       el('div.mod-toybox-field', {}, el('label', { for: 'mod-toybox-html', text: S.toycode }), html),

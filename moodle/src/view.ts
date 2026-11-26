@@ -3,12 +3,13 @@ import Notification from 'core/notification';
 import { add as addToast } from 'core/toast';
 import { ToyBoxPlayer, fmt } from '../../core/src/player';
 import { StandaloneToy } from '../../core/src/standalone';
-import { el, fromServer, readConfig, type Aspect, type MoodleToy } from './shared';
+import { el, fromServer, loadTheme, readConfig, type Aspect, type MoodleToy } from './shared';
 
 interface ViewConfig {
   cmid: number;
   mode: 'video' | 'toy';
   aspect: Aspect;
+  theme: string;
   videoUrl: string | null;
   sdkUrl: string;
   toys: any[];
@@ -22,10 +23,11 @@ interface ViewConfig {
  * The student view: plays the video with its toys, or shows the single toy,
  * and saves each finished toy so Moodle completion can tick over.
  */
-export const init = (selector: string) => {
+export const init = async (selector: string) => {
   const root = document.querySelector(selector);
   if (!root) return;
   const cfg = readConfig<ViewConfig>(root);
+  const theme = await loadTheme(cfg.theme, cfg.sdkUrl);
   const toys = fromServer(cfg.toys);
   const finished = new Set(cfg.finished.map(String));
   let activityComplete = cfg.activityComplete;
@@ -57,6 +59,7 @@ export const init = (selector: string) => {
     const status = el<'p'>('p.mod-toybox-status', { 'aria-live': 'polite' });
     const host = new StandaloneToy(mount, {
       sdkUrl: cfg.sdkUrl,
+      theme,
       aspect: cfg.aspect,
       onComplete: (rec) => {
         finished.add(toy.id);
@@ -92,6 +95,7 @@ export const init = (selector: string) => {
   };
   const player = new ToyBoxPlayer(mount, {
     sdkUrl: cfg.sdkUrl,
+    theme,
     onComplete: (rec) => {
       finished.add(rec.cueId);
       renderList();

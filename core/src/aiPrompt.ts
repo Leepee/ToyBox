@@ -1,4 +1,5 @@
 import type { LintIssue } from './lint';
+import { themePromptSection, type Theme } from './theme';
 
 export interface PromptContext {
   mode: 'video' | 'toy';
@@ -16,13 +17,26 @@ export interface PromptContext {
   issues?: LintIssue[];
 }
 
+/** The toy guide with the institution's look-and-feel brief appended (for "Download toy guide"). */
+export function guideWithTheme(guide: string, theme?: Theme): string {
+  if (!theme) return guide;
+  return `${guide.trim()}
+
+---
+
+# This institution's style (${theme.name})
+
+${themePromptSection(theme).replace(/^## Look and feel\n/, '')}
+`;
+}
+
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 /**
  * Builds a prompt an educator can paste into any AI chat: the full toy guide,
  * then the facts about *this* toy, then a fill-in-the-blanks request.
  */
-export function buildAiPrompt(guide: string, ctx: PromptContext): string {
+export function buildAiPrompt(guide: string, ctx: PromptContext, theme?: Theme): string {
   const facts: string[] = [];
   if (ctx.mode === 'toy') {
     facts.push('- Mode: **toy only** (no video). `ToyBox.hasVideo` will be false.');
@@ -72,7 +86,7 @@ export function buildAiPrompt(guide: string, ctx: PromptContext): string {
 
 ## This toy
 ${facts.join('\n')}
-
+${theme ? '\n' + themePromptSection(theme) + '\n' : ''}
 ${ask}
 
 Please reply with the complete toy as **one HTML file** in a single code block, then the settings JSON (params) in a second code block, then 2–3 sentences on how a learner uses it.

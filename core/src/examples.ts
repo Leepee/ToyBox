@@ -6,13 +6,16 @@ export const STARTER = `<!doctype html>
 <head>
   <script src="toybox-sdk.js"></script>
   <style>
-    body { margin: 0; font-family: system-ui, sans-serif; }
-    .card { height: 100vh; box-sizing: border-box; padding: 5%; background: #fff; border-radius: 16px;
+    /* The --tb-… variables come from the ToyBox theme (your institution's colours and font). */
+    body { margin: 0; font-family: var(--tb-font); color: var(--tb-text); }
+    .card { height: 100vh; box-sizing: border-box; padding: 5%; background: var(--tb-surface);
+            border: 1px solid var(--tb-border); border-radius: var(--tb-radius);
             display: flex; flex-direction: column; justify-content: center; gap: 6%; }
     h1 { margin: 0; font-size: 6vw; }
-    input { width: 100%; accent-color: #f59e0b; }
+    input { width: 100%; accent-color: var(--tb-accent); }
     .ends { display: flex; justify-content: space-between; font-weight: 700; }
-    button { align-self: start; padding: .5em 1.2em; border: 0; border-radius: 99px; background: #1e3a8a; color: #fff; }
+    button { align-self: start; padding: .5em 1.2em; border: 0; border-radius: var(--tb-button-radius);
+             background: var(--tb-primary); color: var(--tb-on-primary); font: inherit; }
   </style>
 </head>
 <body>
@@ -66,7 +69,7 @@ export const EXAMPLES: ExampleToy[] = [
   {
     file: 'toys/quiz.html',
     name: 'Quiz',
-    params: { question: 'Which is bigger?', options: ['3/4', '5/8'], answer: 0, explain: '3/4 = 6/8.', rewatchAt: 0, theme: 'dark' },
+    params: { question: 'Which is bigger?', options: ['3/4', '5/8'], answer: 0, explain: '3/4 = 6/8.', rewatchAt: 0 },
     rect: { x: 22, y: 20, w: 56, h: 58 },
     pause: true,
   },

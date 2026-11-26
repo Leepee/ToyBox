@@ -54,6 +54,7 @@ $config = [
     'cmid' => (int) $cm->id,
     'mode' => $toybox->mode,
     'aspect' => $toybox->aspect,
+    'theme' => get_config('mod_toybox', 'theme') ?: 'auto',
     'videoUrl' => $videourl,
     'sdkUrl' => (new moodle_url('/mod/toybox/sdk/toybox-sdk.js'))->out(false),
     'toys' => toys::export_for_js($toylist),

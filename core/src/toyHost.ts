@@ -1,3 +1,4 @@
+import type { Theme } from './theme';
 import type { ToyMessage, ToySpec } from './types';
 
 export interface ToyFrameOptions {
@@ -12,6 +13,8 @@ export interface ToyFrameOptions {
    * scripts or send data anywhere (fetch, images, forms…). Default true.
    */
   lockdown?: boolean;
+  /** Theme passed into the toy (fonts should already be data: URLs, see resolveThemeFonts). */
+  theme?: Theme;
   emit: (msg: ToyMessage, spec: ToySpec) => void;
 }
 
@@ -82,6 +85,7 @@ export class ToyFrame {
         params: s.params ?? {},
         cue: { id: s.id, start: s.start ?? 0, end: s.end ?? 0 },
         hasVideo: this.opts.hasVideo,
+        theme: this.opts.theme,
       });
       for (const m of this.queue.splice(0)) this.post(m);
     }

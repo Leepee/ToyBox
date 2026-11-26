@@ -58,6 +58,9 @@ export function lintToy(html: string, ctx: LintContext = {}): LintIssue[] {
 
   if (ctx.mode === 'toy' && ctx.autoHeight && /100vh/.test(code))
     add('warning', 'With “fit content” sizing, don’t use 100vh heights. Let the content set the height, or pick a fixed shape.');
+  const hexes = new Set((code.match(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g) ?? []).map((h) => h.toLowerCase()));
+  if (hexes.size >= 4 && !/var\(--tb-/.test(code))
+    add('tip', `It uses ${hexes.size} fixed colours. Use the theme variables (var(--tb-primary), var(--tb-surface)… and ToyBox.color() on a canvas) so it matches your institution's look.`);
   if (/\b(width|height)\s*:\s*(\d{4,})px/.test(code))
     add('tip', 'Some sizes are very large fixed pixels. Use %, vw/vh or flex/grid so the toy fits any screen.');
 

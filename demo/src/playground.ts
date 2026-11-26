@@ -1,7 +1,9 @@
 import { ToyBoxPlayer, fmt } from '../../core/src/player';
 import { StandaloneToy } from '../../core/src/standalone';
 import { lintToy } from '../../core/src/lint';
-import { buildAiPrompt } from '../../core/src/aiPrompt';
+import { buildAiPrompt, guideWithTheme } from '../../core/src/aiPrompt';
+import { bootTheme, downloadText } from './themeBoot';
+import type { Theme } from '../../core/src/theme';
 import { EXAMPLES, STARTER } from '../../core/src/examples';
 import type { Aspect } from '../../core/src/types';
 import type { Cue } from '../../core/src/types';
@@ -23,8 +25,16 @@ function print(s: string) {
   out.textContent = lines.slice(0, 40).join('\n');
 }
 
+let theme: Theme = await bootTheme((t) => {
+  theme = t;
+  player.setTheme(t);
+  standalone.setTheme(t);
+  run();
+});
+
 const player = new ToyBoxPlayer($('player'), {
   sdkUrl,
+  theme,
   onComplete: (r) => print(`${fmt(r.at)}  complete  ${JSON.stringify(r.result)}`),
   onLog: (_c, d) => print(`log       ${JSON.stringify(d)}`),
 });
@@ -32,6 +42,7 @@ player.setLesson({ title: 'Playground', video: 'media/demo.mp4', cues: [] }, new
 
 const standalone = new StandaloneToy($('standalone'), {
   sdkUrl,
+  theme,
   onComplete: (r) => print(`complete  ${JSON.stringify(r.result)}`),
   onLog: (_s, d) => print(`log       ${JSON.stringify(d)}`),
 });
@@ -135,13 +146,18 @@ $('ai-copy').onclick = async () => {
     params: isStarter ? undefined : cue?.params,
     existingHtml: isStarter ? undefined : html.value,
     issues: isStarter ? undefined : lintToy(html.value, { mode: mode(), autoHeight: aspect() === 'auto' }),
-  });
+  }, theme);
   try {
     await navigator.clipboard.writeText(prompt);
     print(`AI prompt copied (${Math.round(prompt.length / 1000)}k characters). Paste it into ChatGPT, Claude, Gemini…, fill in the [brackets], then paste the HTML and settings it gives you back here.`);
   } catch {
     print('Couldn’t reach the clipboard. Use "Download toy guide" and attach it to your AI chat instead.');
   }
+};
+
+$('guide-dl').onclick = async () => {
+  guideText ??= fetch('toybox-toy-guide.md').then((r) => r.text());
+  downloadText('toybox-toy-guide.md', guideWithTheme(await guideText, theme));
 };
 
 async function loadExample(key: string) {

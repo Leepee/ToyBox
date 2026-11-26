@@ -33,6 +33,22 @@ npm run build:moodle     # rebuild the Moodle plugin's JS/CSS after changing cor
 - **On a video:** the toy appears at a set moment, in a box over part of the video. It can pause the video, seek it, and resume it when finished.
 - **Toy only:** the toy stands alone on a page, as a fixed shape (16:9, 4:3, square, 3:4) or sized to fit its content. `ToyBox.hasVideo` is `false`, so toys can hide video-only buttons.
 
+## Themes (your institution's look)
+
+`core/src/theme.ts` holds the design tokens: font, colours, data palette, corners, and a plain-language style brief. They style three things at once:
+
+1. **The ToyBox pages:** player, toy-only page, playground, and the Moodle editor/view.
+2. **Every toy:** the host sends the theme into the sandbox. The SDK sets it as CSS variables (`--tb-surface`, `--tb-primary`, `--tb-accent`, `--tb-c1`…`--tb-c6`, `--tb-font`…) and `ToyBox.theme` / `ToyBox.color()` for canvases. Fonts are sent as `data:` URLs, because toys have no network access.
+3. **The AI kit:** **Copy AI prompt** and **Download toy guide** include the theme's style brief and variable values, so AI-made toys match.
+
+Built in:
+- **Solent University** (the demo's default): PT Sans, navy/slate, Solent red used sparingly, 8px cards.
+- **ToyBox (dark)**: the original look.
+
+In Moodle, **Match this Moodle site** reads the site theme's colours and font automatically. To add an institution, copy the `solent` entry in `THEMES`: colours, `promptNotes`, and any open-licensed font files in `core/public/fonts/`.
+
+PT Sans is © ParaType, under the SIL Open Font License (`core/public/fonts/PT-Sans-OFL.txt`).
+
 ## Making toys with AI
 
 `core/guide/toybox-toy-guide.md` is written for AI assistants. It covers the rules, the SDK, both modes, design advice, a complete worked example and a reply checklist. In the playground and the Moodle editor, **Copy AI prompt** puts the guide plus this toy's details on the clipboard; paste it into any AI chat. The **Checker** then explains anything in the AI's code that won't work (network calls, `alert()`, storage, missing `ToyBox.complete()`…).

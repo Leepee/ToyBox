@@ -1,5 +1,11 @@
 import { StandaloneToy } from '../../core/src/standalone';
 import type { Aspect } from '../../core/src/types';
+import { bootTheme } from './themeBoot';
+
+const theme = await bootTheme((t) => {
+  host.setTheme(t);
+  show(false);
+});
 
 // Toy-only mode: a single toy on a page, as it would appear in a Moodle course.
 const TOYS: Record<string, { name: string; intro: string; params: Record<string, unknown>; aspect: Aspect }> = {
@@ -24,7 +30,7 @@ const TOYS: Record<string, { name: string; intro: string; params: Record<string,
   'toys/quiz.html': {
     name: 'Quick quiz',
     intro: 'A quick check. On its own, the quiz has no “Rewatch” button.',
-    params: { question: 'A wave has a period of 0.5 s. What is its frequency?', options: ['0.5 Hz', '2 Hz'], answer: 1, explain: 'f = 1/T = 1/0.5 = 2 Hz.', theme: 'dark' },
+    params: { question: 'A wave has a period of 0.5 s. What is its frequency?', options: ['0.5 Hz', '2 Hz'], answer: 1, explain: 'f = 1/T = 1/0.5 = 2 Hz.' },
     aspect: 'auto',
   },
   'toys/fraction-builder.html': {
@@ -41,6 +47,7 @@ const status = document.getElementById('status')!;
 for (const [file, t] of Object.entries(TOYS)) pick.add(new Option(t.name, file));
 
 const host = new StandaloneToy(document.getElementById('toy')!, {
+  theme,
   sdkUrl: new URL('toybox-sdk.js', location.href).href,
   onComplete: (r) => {
     status.textContent = `✓ Finished. Result saved: ${JSON.stringify(r.result)}`;

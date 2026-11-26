@@ -1,10 +1,14 @@
 import { ToyBoxPlayer, fmt } from '../../core/src/player';
 import type { Cue } from '../../core/src/types';
+import { bootTheme } from './themeBoot';
+
+const theme = await bootTheme((t) => player.setTheme(t));
 
 const logEl = document.getElementById('log')!;
 const done = new Set<string>();
 
 const player = new ToyBoxPlayer(document.getElementById('player')!, {
+  theme,
   onComplete(rec) {
     done.add(rec.cueId);
     const li = logEl.querySelector(`[data-cue="${CSS.escape(rec.cueId)}"]`);
@@ -42,7 +46,8 @@ document.getElementById('lesson-title')!.textContent =
 player
   .loadLesson(lessonUrl)
   .then((lesson) => {
-    if (!catalog.length) document.getElementById('lesson-title')!.textContent = lesson.title;
+    document.getElementById('lesson-heading')!.textContent = lesson.title;
+    if (!catalog.length) document.getElementById('lesson-title')!.textContent = '';
     document.title = `${lesson.title} · ToyBox`;
     renderLog(lesson.cues);
   })

@@ -19,6 +19,17 @@ export function fromServer(toys: any[]): MoodleToy[] {
 
 export type { Aspect };
 
+import { THEMES, resolveThemeFonts, themeFromPage, type Theme } from '../../core/src/theme';
+
+/**
+ * The site's chosen ToyBox look: 'auto' reads the Moodle theme's colours and font
+ * from the page; otherwise a built-in theme. Fonts become data: URLs for the toys.
+ */
+export async function loadTheme(id: string, sdkUrl: string): Promise<Theme> {
+  if (id === 'auto' || !THEMES[id]) return resolveThemeFonts(themeFromPage(THEMES.solent), location.href);
+  return resolveThemeFonts(THEMES[id], sdkUrl);
+}
+
 /** Tiny DOM helper: el('div.cls', {attr: v}, ...children). */
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: string,

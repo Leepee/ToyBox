@@ -17,11 +17,13 @@ function copy(from, to) {
 if (targets.includes('demo')) {
   copy('core/public/toybox-sdk.js', 'demo/public/toybox-sdk.js');
   copy('core/public/toys', 'demo/public/toys');
+  copy('core/public/fonts', 'demo/public/fonts');
   copy('core/guide/toybox-toy-guide.md', 'demo/public/toybox-toy-guide.md');
 }
 if (targets.includes('moodle')) {
   copy('core/public/toybox-sdk.js', 'moodle/toybox/sdk/toybox-sdk.js');
   copy('core/public/toys', 'moodle/toybox/toys');
+  copy('core/public/fonts', 'moodle/toybox/sdk/fonts');
   copy('core/guide/toybox-toy-guide.md', 'moodle/toybox/guide/toybox-toy-guide.md');
 }
 console.log('synced core →', targets.join(', '));

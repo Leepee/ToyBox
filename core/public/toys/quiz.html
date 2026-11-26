@@ -5,27 +5,24 @@
   <title>Quick quiz</title>
   <script src="../toybox-sdk.js"></script>
   <style>
-    :root { font-family: system-ui, sans-serif; color: #0f172a; }
+    :root { font-family: var(--tb-font); color: var(--tb-text); }
     html, body { margin: 0; height: 100%; background: transparent; }
     .card {
       box-sizing: border-box; height: 100%; padding: 4% 5%; overflow: auto;
-      background: #fff; border-radius: 16px; box-shadow: 0 10px 30px #0006;
+      background: var(--tb-surface); border: 1px solid var(--tb-border); border-radius: var(--tb-radius); box-shadow: var(--tb-shadow);
       display: flex; flex-direction: column; gap: 3%; justify-content: center;
     }
     h1 { font-size: clamp(14px, 4.2vw, 24px); margin: 0 0 2%; }
     .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .opts button {
       font-size: clamp(14px, 4.5vw, 26px); font-weight: 700; padding: .5em; cursor: pointer;
-      border: 2px solid #cbd5e1; border-radius: 12px; background: #f8fafc;
+      border: 2px solid var(--tb-border); border-radius: var(--tb-radius); background: var(--tb-surface-alt); color: inherit;
     }
-    .opts button.right { background: #dcfce7; border-color: #16a34a; }
-    .opts button.wrong { background: #fee2e2; border-color: #dc2626; }
+    .opts button:hover { border-color: var(--tb-primary); }
+    .opts button.right { background: color-mix(in srgb, var(--tb-success) 15%, var(--tb-surface)); border-color: var(--tb-success); }
+    .opts button.wrong { background: color-mix(in srgb, var(--tb-danger) 15%, var(--tb-surface)); border-color: var(--tb-danger); }
     .fb { font-size: clamp(12px, 3vw, 17px); min-height: 1.4em; }
-    body.dark .card { background: #0b1020f2; color: #e5e7eb; border: 1px solid #ffffff26; }
-    body.dark .opts button { background: #ffffff10; border-color: #ffffff33; color: inherit; }
-    body.dark .opts button.right { background: #14532d; border-color: #4ade80; }
-    body.dark .opts button.wrong { background: #7f1d1d; border-color: #f87171; }
-    .rewatch { margin-left: 8px; border: 0; border-radius: 999px; padding: .35em 1em; background: #1e3a8a; color: #fff; cursor: pointer; }
+    .rewatch { margin-left: 8px; border: 0; border-radius: var(--tb-button-radius); padding: .35em 1em; background: var(--tb-primary); color: var(--tb-on-primary); cursor: pointer; font: inherit; }
   </style>
 </head>
 <body>
@@ -39,7 +36,6 @@
 
     ToyBox.onInit(function (p) {
       var tries = 0;
-      if (p.theme === 'dark') document.body.classList.add('dark');
       document.getElementById('q').textContent = p.question;
       var opts = document.getElementById('opts'), fb = document.getElementById('fb');
       opts.innerHTML = '';

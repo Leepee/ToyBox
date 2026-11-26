@@ -1,4 +1,5 @@
 import { ToyFrame } from './toyHost';
+import { applyTheme, type Theme } from './theme';
 import type { CompletionRecord, Cue, Lesson, ToyMessage } from './types';
 
 export interface PlayerOptions {
@@ -8,6 +9,8 @@ export interface PlayerOptions {
   onLog?: (cue: Cue, data: unknown) => void;
   /** Lock inline toys down with a CSP (no network). Default true. */
   lockdown?: boolean;
+  /** Theme for the player controls and the toys (see resolveThemeFonts). */
+  theme?: Theme;
 }
 
 /**
@@ -56,6 +59,7 @@ export class ToyBoxPlayer {
     this.timeLabel = q('.tb-time');
     this.playBtn = q('.tb-play');
 
+    if (opts.theme) applyTheme(opts.theme, this.root);
     this.wireControls(q('.tb-fs'));
     this.startClock();
   }
@@ -78,6 +82,13 @@ export class ToyBoxPlayer {
   }
 
   /** Replace the cue list (used live by the playground). */
+  /** Switch theme: restyles the controls and reloads visible toys with the new theme. */
+  setTheme(theme: Theme) {
+    this.opts.theme = theme;
+    applyTheme(theme, this.root);
+    this.setCues(this.cues);
+  }
+
   setCues(cues: Cue[]) {
     for (const t of this.active.values()) t.destroy();
     this.active.clear();
@@ -152,6 +163,7 @@ export class ToyBoxPlayer {
       sdkUrl: this.sdkUrl,
       hasVideo: true,
       lockdown: this.opts.lockdown,
+      theme: this.opts.theme,
       emit: (m) => this.onToyMessage(m, cue),
     });
     const { x, y, w, h } = cue.rect;

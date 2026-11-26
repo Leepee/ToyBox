@@ -5,11 +5,11 @@
   <title>Wave Lab</title>
   <script src="../toybox-sdk.js"></script>
   <style>
-    :root { --amber: #f59e0b; --cyan: #22d3ee; --pink: #f472b6; --green: #4ade80; --muted: #94a3b8; font-family: system-ui, -apple-system, sans-serif; color: #e5e7eb; }
+    :root { --amber: var(--tb-c1); --cyan: var(--tb-c2); --pink: var(--tb-c3); --green: var(--tb-success); --muted: var(--tb-muted); font-family: var(--tb-font); color: var(--tb-text); }
     html, body { margin: 0; height: 100%; background: transparent; }
     .card {
       box-sizing: border-box; height: 100vh; padding: 2.2vh 2.4vw; gap: 1.6vh;
-      background: #0b1020f2; border: 1px solid #ffffff26; border-radius: 16px; box-shadow: 0 12px 40px #000a;
+      background: var(--tb-surface); border: 1px solid var(--tb-border); border-radius: var(--tb-radius); box-shadow: var(--tb-shadow);
       display: grid; grid-template-rows: auto 1fr auto auto;
     }
     header { display: flex; align-items: baseline; gap: 1.2vw; flex-wrap: wrap; }
@@ -17,18 +17,18 @@
     .goal { color: var(--muted); font-size: clamp(11px, 1.9vw, 16px); }
     .eq { margin-left: auto; font: 600 clamp(12px, 2.2vw, 19px) ui-monospace, Menlo, monospace; }
     .eq .a { color: var(--amber); } .eq .f { color: var(--cyan); } .eq .p { color: var(--pink); }
-    canvas { width: 100%; height: 100%; min-height: 0; display: block; border-radius: 10px; background: #070b17; touch-action: none; }
+    canvas { width: 100%; height: 100%; min-height: 0; display: block; border-radius: calc(var(--tb-radius) * 0.6); background: var(--tb-surface-alt); touch-action: none; }
     .controls { display: grid; grid-template-columns: auto 1fr 5.5em; gap: .6vh 1vw; align-items: center; font-size: clamp(11px, 1.9vw, 16px); }
     .controls label { font-weight: 700; }
     .controls output { font-variant-numeric: tabular-nums; text-align: right; }
     input[type=range] { width: 100%; height: 22px; }
     #A { accent-color: var(--amber); } #f { accent-color: var(--cyan); } #p { accent-color: var(--pink); }
     footer { display: flex; align-items: center; gap: 1vw; flex-wrap: wrap; font-size: clamp(11px, 1.9vw, 16px); }
-    button { font: inherit; border: 1px solid #ffffff33; background: #ffffff10; color: inherit; border-radius: 999px; padding: .45em 1em; cursor: pointer; }
-    button:hover { background: #ffffff1f; }
-    button.go { margin-left: auto; background: #1e3a8a; border-color: transparent; }
-    button.go.ready { background: var(--green); color: #052e16; font-weight: 700; animation: pulse 1s infinite alternate; }
-    @keyframes pulse { to { box-shadow: 0 0 0 6px #4ade8040; } }
+    button { font: inherit; border: 1px solid var(--tb-border); background: var(--tb-surface-alt); color: inherit; border-radius: var(--tb-button-radius); padding: .45em 1em; cursor: pointer; }
+    button:hover { filter: brightness(0.95); }
+    button.go { margin-left: auto; background: var(--tb-primary); color: var(--tb-on-primary); border-color: transparent; }
+    button.go.ready { background: var(--tb-success); color: var(--tb-surface); font-weight: 700; animation: pulse 1s infinite alternate; }
+    @keyframes pulse { to { box-shadow: 0 0 0 6px color-mix(in srgb, var(--tb-success) 30%, transparent); } }
     .status { min-height: 1.3em; }
     .status.win { color: var(--green); font-weight: 700; }
     .hide { display: none !important; }
@@ -58,6 +58,7 @@
 
     ToyBox.onInit(function (p) {
       var $ = function (id) { return document.getElementById(id); };
+      var C = function (k, a) { var c = ToyBox.color(k); if (a == null || !/^#[0-9a-f]{6}$/i.test(c)) return c; return 'rgba(' + parseInt(c.slice(1, 3), 16) + ',' + parseInt(c.slice(3, 5), 16) + ',' + parseInt(c.slice(5, 7), 16) + ',' + a + ')'; };
       if (!ToyBox.hasVideo) $('go').textContent = 'Done ✓';
       var cv = $('c'), ctx = cv.getContext('2d');
       var A = $('A'), F = $('f'), PH = $('p');
@@ -129,11 +130,11 @@
         ctx.clearRect(0, 0, w, h);
         var pad = 10, yc = h / 2, amp = h / 2 - pad - 4, scroll = (now / 1000) * 0.25;
         // grid
-        ctx.strokeStyle = '#1a223c'; ctx.lineWidth = 1;
+        ctx.strokeStyle = C('grid'); ctx.lineWidth = 1;
         for (var gx = 0; gx <= win * 4; gx++) { var x = pad + (w - 2 * pad) * gx / (win * 4); ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, h - pad); ctx.stroke(); }
         for (var gy = -2; gy <= 2; gy++) { var y = yc - amp * gy / 2; ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke(); }
-        ctx.strokeStyle = '#38446e'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(pad, yc); ctx.lineTo(w - pad, yc); ctx.stroke();
-        ctx.fillStyle = '#64748b'; ctx.font = '11px system-ui'; ctx.textAlign = 'right';
+        ctx.strokeStyle = C('muted', 0.6); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(pad, yc); ctx.lineTo(w - pad, yc); ctx.stroke();
+        ctx.fillStyle = C('muted'); ctx.font = '11px ' + ToyBox.theme.font; ctx.textAlign = 'right';
         ctx.fillText(win + ' s →', w - pad - 4, h - pad - 4);
 
         function wave(a, f, ph, color, width, dash) {
@@ -146,8 +147,8 @@
           }
           ctx.stroke(); ctx.setLineDash([]);
         }
-        if (target) wave(target.amplitude, target.frequency, (target.phase || 0) * Math.PI / 180, matched ? '#4ade8099' : '#ffffff70', 2.5, [8, 7]);
-        wave(Number(A.value), Number(F.value), Number(PH.value) * Math.PI / 180, matched ? '#4ade80' : '#22d3ee', 3.5);
+        if (target) wave(target.amplitude, target.frequency, (target.phase || 0) * Math.PI / 180, matched ? C('success', 0.6) : C('text', 0.45), 2.5, [8, 7]);
+        wave(Number(A.value), Number(F.value), Number(PH.value) * Math.PI / 180, matched ? C('success') : C(1), 3.5);
         requestAnimationFrame(draw);
       }
       requestAnimationFrame(draw);
