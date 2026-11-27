@@ -16,6 +16,8 @@
 .tb-controls button { background: none; border: 0; color: inherit; font-size: 16px; cursor: pointer; width: 32px; height: 32px; border-radius: 6px; }
 .tb-controls button:hover { background: #ffffff1a; }
 .tb-controls .tb-mute { display: grid; place-items: center; }
+.tb-controls .tb-volume { width: 72px; flex: none; accent-color: var(--tb-on-band, #e5e7eb); }
+@media (max-width: 520px) { .tb-controls .tb-volume { display: none; } }
 .tb-controls .tb-mute.tb-muted { color: var(--tb-accent, #f59e0b); }
 .tb-time { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--tb-on-band, #9ca3af); opacity: .8; white-space: nowrap; }
 .tb-track { position: relative; flex: 1; height: 24px; display: flex; align-items: center; }

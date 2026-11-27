@@ -24,6 +24,8 @@ export interface PlayerMedia {
   /** 0 until the duration is known, then 1+ (like HTMLMediaElement). */
   readonly readyState: number;
   muted: boolean;
+  /** 0 (silent) to 1 (full). */
+  volume: number;
   play(): Promise<void>;
   pause(): void;
   addEventListener(type: string, fn: () => void): void;
@@ -123,6 +125,12 @@ export class FileMedia implements PlayerMedia {
   set muted(m: boolean) {
     this.el.muted = m;
   }
+  get volume() {
+    return this.el.volume;
+  }
+  set volume(v: number) {
+    this.el.volume = Math.min(1, Math.max(0, v));
+  }
   play() {
     return this.el.play().catch(() => {});
   }
@@ -160,6 +168,9 @@ abstract class EmbedMedia implements PlayerMedia {
   private isMuted = false;
   /** True once the viewer muted it themselves (so playback doesn't unmute it again). */
   protected userMuted = false;
+  private vol = 1;
+  /** True once the viewer set the volume themselves. */
+  protected userVolume = false;
 
   constructor() {
     this.el = document.createElement('div');
@@ -194,6 +205,14 @@ abstract class EmbedMedia implements PlayerMedia {
     this.syncMuted(m);
     this.setMuted(m);
   }
+  get volume() {
+    return this.vol;
+  }
+  set volume(v: number) {
+    this.userVolume = true;
+    this.syncVolume(Math.min(1, Math.max(0, v)));
+    this.applyVolume(this.vol);
+  }
   play() {
     this.doPlay();
     return Promise.resolve();
@@ -225,6 +244,12 @@ abstract class EmbedMedia implements PlayerMedia {
   protected syncMuted(m: boolean) {
     if (m === this.isMuted) return;
     this.isMuted = m;
+    this.emit('volumechange');
+  }
+  /** The provider told us its volume (0–1). */
+  protected syncVolume(v: number) {
+    if (!Number.isFinite(v) || Math.abs(v - this.vol) < 0.001) return;
+    this.vol = v;
     this.emit('volumechange');
   }
   protected emit(type: string) {
@@ -260,6 +285,7 @@ abstract class EmbedMedia implements PlayerMedia {
   protected abstract doPlay(): void;
   protected abstract doPause(): void;
   protected abstract setMuted(m: boolean): void;
+  protected abstract applyVolume(v: number): void;
 }
 
 const scripts = new Map<string, Promise<void>>();
@@ -364,6 +390,7 @@ export class YouTubeMedia extends EmbedMedia {
       if (!this.yt?.getCurrentTime) return;
       this.report(this.yt.getCurrentTime());
       if (this.yt.isMuted) this.syncMuted(this.yt.isMuted());
+      if (this.yt.getVolume) this.syncVolume(this.yt.getVolume() / 100);
       this.emit('timeupdate');
     }, 250);
   }
@@ -383,7 +410,12 @@ export class YouTubeMedia extends EmbedMedia {
     this.call(() => {
       this.yt.playVideo();
       if (!this.userMuted) this.yt.unMute();
+      // A volume of 0 left over from elsewhere is never what the viewer wants.
+      if (!this.userVolume && this.yt.getVolume?.() === 0) this.yt.setVolume(100);
     });
+  }
+  protected applyVolume(v: number) {
+    this.call(() => this.yt.setVolume(Math.round(v * 100)));
   }
   protected doPause() {
     this.call(() => this.yt.pauseVideo());
@@ -484,8 +516,20 @@ export class VimeoMedia extends EmbedMedia {
     this.call(() => {
       this.vp.play().catch(() => {});
       if (!this.userMuted) this.vp.setMuted(false).catch(() => {});
-      this.vp.getMuted?.().then((m: boolean) => this.syncMuted(!!m)).catch(() => {});
+      Promise.resolve(this.vp.getMuted?.())
+        .then((m: boolean | undefined) => m !== undefined && this.syncMuted(!!m))
+        .catch(() => {});
+      Promise.resolve(this.vp.getVolume?.())
+        .then((v: number | undefined) => {
+          if (v === undefined) return;
+          if (!this.userVolume && v === 0) return this.vp.setVolume(1).then(() => this.syncVolume(1));
+          this.syncVolume(v);
+        })
+        .catch(() => {});
     });
+  }
+  protected applyVolume(v: number) {
+    this.call(() => this.vp.setVolume(v).catch(() => {}));
   }
   protected doPause() {
     this.call(() => this.vp.pause().catch(() => {}));
@@ -504,16 +548,23 @@ export class VimeoMedia extends EmbedMedia {
 let panoptoCount = 0;
 
 /**
- * A Panopto session, controlled through Panopto's Embed API. The API reports
- * time only when the player sends a state update, so the clock interpolates
- * between updates (and ignores repeats of a stale value).
+ * A Panopto session, controlled through Panopto's Embed API.
+ *
+ * Panopto's loadVideo() starts playback immediately, and playback that doesn't
+ * come from a click is forced to start muted. So the video is only loaded when
+ * the viewer first presses play: nothing streams before then, and that first
+ * play is a real click, so it has sound. Seeks before then are remembered.
  */
 export class PanoptoMedia extends EmbedMedia {
   readonly kind = 'panopto' as const;
   private api: any = null;
   private poll = 0;
   private lastReported = -1;
-  private pending: (() => void)[] = [];
+  private iframeReady = false;
+  private loaded = false;
+  private beforeIframe: (() => void)[] = [];
+  private afterLoad: (() => void)[] = [];
+  private pendingSeek: number | null = null;
 
   constructor(
     readonly server: string,
@@ -539,12 +590,11 @@ export class PanoptoMedia extends EmbedMedia {
             autoplay: 'false',
           },
           events: {
-            onIframeReady: () => this.api.loadVideo(),
-            onReady: () => {
-              this.setDuration(this.api.getDuration());
-              this.markReady();
-              for (const fn of this.pending.splice(0)) fn();
+            onIframeReady: () => {
+              this.iframeReady = true;
+              for (const fn of this.beforeIframe.splice(0)) fn();
             },
+            onReady: () => this.onLoaded(),
             onStateChange: (state: number) => this.onState(state),
             onLoginShown: () => this.emit('login'),
             onError: () => this.emit('error'),
@@ -554,13 +604,37 @@ export class PanoptoMedia extends EmbedMedia {
       .catch(() => this.emit('error'));
   }
 
-  private call(fn: () => void) {
+  /** Runs once the iframe can take commands. */
+  private whenIframe(fn: () => void) {
+    if (this.iframeReady) fn();
+    else this.beforeIframe.push(fn);
+  }
+  /** Runs once the video itself has loaded (after the first play). */
+  private whenLoaded(fn: () => void) {
     if (this.ready) fn();
-    else this.pending.push(fn);
+    else this.afterLoad.push(fn);
   }
 
-  /** Take Panopto's time only when it has actually changed (and isn't the pre-seek value). */
+  private onLoaded() {
+    this.setDuration(this.api.getDuration());
+    this.markReady();
+    if (this.pendingSeek !== null) {
+      this.api.seekTo(this.pendingSeek);
+      this.lastReported = -1;
+      this.pendingSeek = null;
+    }
+    if (this.userMuted) this.api.muteVideo();
+    else this.api.unmuteVideo();
+    // Panopto remembers each viewer's volume; a leftover 0 is never wanted.
+    if (this.userVolume) this.api.setVolume(this.volume);
+    else if (this.api.getVolume() === 0) this.api.setVolume(1);
+    for (const fn of this.afterLoad.splice(0)) fn();
+    this.sync();
+  }
+
+  /** Take Panopto's time only when it has actually changed. */
   private sync() {
+    if (!this.ready) return;
     const t = this.api?.getCurrentTime?.();
     if (typeof t === 'number' && t !== this.lastReported) {
       this.lastReported = t;
@@ -569,6 +643,8 @@ export class PanoptoMedia extends EmbedMedia {
     this.setDuration(this.api?.getDuration?.() ?? NaN);
     const m = this.api?.isMuted?.();
     if (typeof m === 'boolean') this.syncMuted(m);
+    const v = this.api?.getVolume?.();
+    if (typeof v === 'number') this.syncVolume(v);
   }
 
   private onState(state: number) {
@@ -591,25 +667,35 @@ export class PanoptoMedia extends EmbedMedia {
   }
 
   protected seekTo(t: number) {
-    this.call(() => {
-      this.api.seekTo(t);
-      this.lastReported = -1;
-      setTimeout(() => this.emit('seeked'), 200);
-    });
+    if (!this.ready) {
+      // Not loaded yet: jump there when it loads.
+      this.pendingSeek = t;
+      setTimeout(() => this.emit('seeked'), 0);
+      return;
+    }
+    this.api.seekTo(t);
+    this.lastReported = -1;
+    setTimeout(() => this.emit('seeked'), 200);
   }
   protected doPlay() {
-    this.call(() => {
+    this.whenIframe(() => {
+      if (!this.loaded) {
+        this.loaded = true;
+        this.api.loadVideo(); // loads and starts playing
+        return;
+      }
       this.api.playVideo();
-      // Playback started without a click (e.g. a preview) can leave Panopto muted;
-      // unmute unless the viewer chose mute. Needs a click to be allowed by browsers.
       if (!this.userMuted) this.api.unmuteVideo();
     });
   }
   protected doPause() {
-    this.call(() => this.api.pauseVideo());
+    if (this.loaded) this.whenLoaded(() => this.api.pauseVideo());
   }
   protected setMuted(m: boolean) {
-    this.call(() => (m ? this.api.muteVideo() : this.api.unmuteVideo()));
+    this.whenLoaded(() => (m ? this.api.muteVideo() : this.api.unmuteVideo()));
+  }
+  protected applyVolume(v: number) {
+    this.whenLoaded(() => this.api.setVolume(v));
   }
   destroy() {
     clearInterval(this.poll);

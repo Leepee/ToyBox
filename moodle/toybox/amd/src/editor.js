@@ -184,6 +184,12 @@ var FileMedia = class {
   set muted(m) {
     this.el.muted = m;
   }
+  get volume() {
+    return this.el.volume;
+  }
+  set volume(v) {
+    this.el.volume = Math.min(1, Math.max(0, v));
+  }
   play() {
     return this.el.play().catch(() => {
     });
@@ -218,6 +224,9 @@ var EmbedMedia = class {
     __publicField(this, "isMuted", false);
     /** True once the viewer muted it themselves (so playback doesn't unmute it again). */
     __publicField(this, "userMuted", false);
+    __publicField(this, "vol", 1);
+    /** True once the viewer set the volume themselves. */
+    __publicField(this, "userVolume", false);
     this.el = document.createElement("div");
     this.el.className = "tb-media tb-embed";
     this.target = document.createElement("div");
@@ -249,6 +258,14 @@ var EmbedMedia = class {
     this.syncMuted(m);
     this.setMuted(m);
   }
+  get volume() {
+    return this.vol;
+  }
+  set volume(v) {
+    this.userVolume = true;
+    this.syncVolume(Math.min(1, Math.max(0, v)));
+    this.applyVolume(this.vol);
+  }
   play() {
     this.doPlay();
     return Promise.resolve();
@@ -278,6 +295,12 @@ var EmbedMedia = class {
   syncMuted(m) {
     if (m === this.isMuted) return;
     this.isMuted = m;
+    this.emit("volumechange");
+  }
+  /** The provider told us its volume (0–1). */
+  syncVolume(v) {
+    if (!Number.isFinite(v) || Math.abs(v - this.vol) < 1e-3) return;
+    this.vol = v;
     this.emit("volumechange");
   }
   emit(type) {
@@ -406,6 +429,7 @@ var YouTubeMedia = class extends EmbedMedia {
       if (!((_a = this.yt) == null ? void 0 : _a.getCurrentTime)) return;
       this.report(this.yt.getCurrentTime());
       if (this.yt.isMuted) this.syncMuted(this.yt.isMuted());
+      if (this.yt.getVolume) this.syncVolume(this.yt.getVolume() / 100);
       this.emit("timeupdate");
     }, 250);
   }
@@ -421,9 +445,14 @@ var YouTubeMedia = class extends EmbedMedia {
   }
   doPlay() {
     this.call(() => {
+      var _a, _b;
       this.yt.playVideo();
       if (!this.userMuted) this.yt.unMute();
+      if (!this.userVolume && ((_b = (_a = this.yt).getVolume) == null ? void 0 : _b.call(_a)) === 0) this.yt.setVolume(100);
     });
+  }
+  applyVolume(v) {
+    this.call(() => this.yt.setVolume(Math.round(v * 100)));
   }
   doPause() {
     this.call(() => this.yt.pauseVideo());
@@ -510,14 +539,24 @@ var VimeoMedia = class extends EmbedMedia {
   }
   doPlay() {
     this.call(() => {
-      var _a, _b;
+      var _a, _b, _c, _d;
       this.vp.play().catch(() => {
       });
       if (!this.userMuted) this.vp.setMuted(false).catch(() => {
       });
-      (_b = (_a = this.vp).getMuted) == null ? void 0 : _b.call(_a).then((m) => this.syncMuted(!!m)).catch(() => {
+      Promise.resolve((_b = (_a = this.vp).getMuted) == null ? void 0 : _b.call(_a)).then((m) => m !== void 0 && this.syncMuted(!!m)).catch(() => {
+      });
+      Promise.resolve((_d = (_c = this.vp).getVolume) == null ? void 0 : _d.call(_c)).then((v) => {
+        if (v === void 0) return;
+        if (!this.userVolume && v === 0) return this.vp.setVolume(1).then(() => this.syncVolume(1));
+        this.syncVolume(v);
+      }).catch(() => {
       });
     });
+  }
+  applyVolume(v) {
+    this.call(() => this.vp.setVolume(v).catch(() => {
+    }));
   }
   doPause() {
     this.call(() => this.vp.pause().catch(() => {
@@ -544,7 +583,11 @@ var PanoptoMedia = class extends EmbedMedia {
     __publicField(this, "api", null);
     __publicField(this, "poll", 0);
     __publicField(this, "lastReported", -1);
-    __publicField(this, "pending", []);
+    __publicField(this, "iframeReady", false);
+    __publicField(this, "loaded", false);
+    __publicField(this, "beforeIframe", []);
+    __publicField(this, "afterLoad", []);
+    __publicField(this, "pendingSeek", null);
     this.target.id = `tb-panopto-${++panoptoCount}`;
     loadScript("https://developers.panopto.com/scripts/embedapi.min.js").then(() => {
       const EmbedApi = window.EmbedApi;
@@ -562,12 +605,11 @@ var PanoptoMedia = class extends EmbedMedia {
           autoplay: "false"
         },
         events: {
-          onIframeReady: () => this.api.loadVideo(),
-          onReady: () => {
-            this.setDuration(this.api.getDuration());
-            this.markReady();
-            for (const fn of this.pending.splice(0)) fn();
+          onIframeReady: () => {
+            this.iframeReady = true;
+            for (const fn of this.beforeIframe.splice(0)) fn();
           },
+          onReady: () => this.onLoaded(),
           onStateChange: (state) => this.onState(state),
           onLoginShown: () => this.emit("login"),
           onError: () => this.emit("error")
@@ -575,13 +617,35 @@ var PanoptoMedia = class extends EmbedMedia {
       });
     }).catch(() => this.emit("error"));
   }
-  call(fn) {
-    if (this.ready) fn();
-    else this.pending.push(fn);
+  /** Runs once the iframe can take commands. */
+  whenIframe(fn) {
+    if (this.iframeReady) fn();
+    else this.beforeIframe.push(fn);
   }
-  /** Take Panopto's time only when it has actually changed (and isn't the pre-seek value). */
+  /** Runs once the video itself has loaded (after the first play). */
+  whenLoaded(fn) {
+    if (this.ready) fn();
+    else this.afterLoad.push(fn);
+  }
+  onLoaded() {
+    this.setDuration(this.api.getDuration());
+    this.markReady();
+    if (this.pendingSeek !== null) {
+      this.api.seekTo(this.pendingSeek);
+      this.lastReported = -1;
+      this.pendingSeek = null;
+    }
+    if (this.userMuted) this.api.muteVideo();
+    else this.api.unmuteVideo();
+    if (this.userVolume) this.api.setVolume(this.volume);
+    else if (this.api.getVolume() === 0) this.api.setVolume(1);
+    for (const fn of this.afterLoad.splice(0)) fn();
+    this.sync();
+  }
+  /** Take Panopto's time only when it has actually changed. */
   sync() {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    if (!this.ready) return;
     const t = (_b = (_a = this.api) == null ? void 0 : _a.getCurrentTime) == null ? void 0 : _b.call(_a);
     if (typeof t === "number" && t !== this.lastReported) {
       this.lastReported = t;
@@ -590,6 +654,8 @@ var PanoptoMedia = class extends EmbedMedia {
     this.setDuration((_e = (_d = (_c = this.api) == null ? void 0 : _c.getDuration) == null ? void 0 : _d.call(_c)) != null ? _e : NaN);
     const m = (_g = (_f = this.api) == null ? void 0 : _f.isMuted) == null ? void 0 : _g.call(_f);
     if (typeof m === "boolean") this.syncMuted(m);
+    const v = (_i = (_h = this.api) == null ? void 0 : _h.getVolume) == null ? void 0 : _i.call(_h);
+    if (typeof v === "number") this.syncVolume(v);
   }
   onState(state) {
     this.sync();
@@ -609,23 +675,34 @@ var PanoptoMedia = class extends EmbedMedia {
     }
   }
   seekTo(t) {
-    this.call(() => {
-      this.api.seekTo(t);
-      this.lastReported = -1;
-      setTimeout(() => this.emit("seeked"), 200);
-    });
+    if (!this.ready) {
+      this.pendingSeek = t;
+      setTimeout(() => this.emit("seeked"), 0);
+      return;
+    }
+    this.api.seekTo(t);
+    this.lastReported = -1;
+    setTimeout(() => this.emit("seeked"), 200);
   }
   doPlay() {
-    this.call(() => {
+    this.whenIframe(() => {
+      if (!this.loaded) {
+        this.loaded = true;
+        this.api.loadVideo();
+        return;
+      }
       this.api.playVideo();
       if (!this.userMuted) this.api.unmuteVideo();
     });
   }
   doPause() {
-    this.call(() => this.api.pauseVideo());
+    if (this.loaded) this.whenLoaded(() => this.api.pauseVideo());
   }
   setMuted(m) {
-    this.call(() => m ? this.api.muteVideo() : this.api.unmuteVideo());
+    this.whenLoaded(() => m ? this.api.muteVideo() : this.api.unmuteVideo());
+  }
+  applyVolume(v) {
+    this.whenLoaded(() => this.api.setVolume(v));
   }
   destroy() {
     clearInterval(this.poll);
@@ -952,6 +1029,7 @@ var ToyBoxPlayer = class {
     __publicField(this, "timeLabel");
     __publicField(this, "playBtn");
     __publicField(this, "muteBtn");
+    __publicField(this, "volume");
     __publicField(this, "shownMuted", null);
     __publicField(this, "cues", []);
     __publicField(this, "baseUrl", location.href);
@@ -974,6 +1052,7 @@ var ToyBoxPlayer = class {
           </div>
           <span class="tb-time">0:00 / 0:00</span>
           <button class="tb-mute" aria-label="Mute"></button>
+          <input class="tb-volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
           <button class="tb-fs" aria-label="Fullscreen">\u26F6</button>
         </div>
       </div>`;
@@ -986,6 +1065,7 @@ var ToyBoxPlayer = class {
     this.scrub = q(".tb-scrub");
     this.timeLabel = q(".tb-time");
     this.muteBtn = q(".tb-mute");
+    this.volume = q(".tb-volume");
     this.playBtn = q(".tb-play");
     if (opts.theme) applyTheme(opts.theme, this.root);
     this.wireControls(q(".tb-fs"));
@@ -1143,8 +1223,19 @@ var ToyBoxPlayer = class {
     const toggle = () => this.video.paused ? this.play() : this.pause();
     this.playBtn.onclick = toggle;
     this.muteBtn.onclick = () => {
-      if (!this.media) return;
-      this.media.muted = !this.media.muted;
+      const m = this.media;
+      if (!m) return;
+      if (m.muted || m.volume < 0.05) {
+        if (m.volume < 0.05) m.volume = 1;
+        m.muted = false;
+      } else m.muted = true;
+      this.renderControls();
+    };
+    this.volume.oninput = () => {
+      const m = this.media;
+      if (!m) return;
+      m.volume = Number(this.volume.value);
+      if (m.volume > 0 && m.muted) m.muted = false;
       this.renderControls();
     };
     this.shield.addEventListener("click", toggle);
@@ -1174,11 +1265,13 @@ var ToyBoxPlayer = class {
       this.scrub.value = String(Math.round(v.currentTime / v.duration * 1e3));
     }
     this.timeLabel.textContent = `${fmt(v.currentTime)} / ${fmt(v.duration || 0)}`;
-    if (this.shownMuted !== v.muted) {
-      this.shownMuted = v.muted;
-      this.muteBtn.innerHTML = v.muted ? ICON_MUTED : ICON_SOUND;
-      this.muteBtn.setAttribute("aria-label", v.muted ? "Unmute" : "Mute");
-      this.muteBtn.classList.toggle("tb-muted", v.muted);
+    if (document.activeElement !== this.volume) this.volume.value = String(v.muted ? 0 : v.volume);
+    const silent = v.muted || v.volume < 0.05;
+    if (this.shownMuted !== silent) {
+      this.shownMuted = silent;
+      this.muteBtn.innerHTML = silent ? ICON_MUTED : ICON_SOUND;
+      this.muteBtn.setAttribute("aria-label", silent ? "Unmute" : "Mute");
+      this.muteBtn.classList.toggle("tb-muted", silent);
     }
   }
   renderMarkers() {
@@ -1208,6 +1301,7 @@ var EMPTY_MEDIA = {
   paused: true,
   readyState: 0,
   muted: false,
+  volume: 1,
   play: () => Promise.resolve(),
   pause: () => {
   },

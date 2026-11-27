@@ -33,6 +33,7 @@ export class ToyBoxPlayer {
   private timeLabel: HTMLElement;
   private playBtn: HTMLButtonElement;
   private muteBtn: HTMLButtonElement;
+  private volume: HTMLInputElement;
   private shownMuted: boolean | null = null;
 
   private cues: Cue[] = [];
@@ -57,6 +58,7 @@ export class ToyBoxPlayer {
           </div>
           <span class="tb-time">0:00 / 0:00</span>
           <button class="tb-mute" aria-label="Mute"></button>
+          <input class="tb-volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
           <button class="tb-fs" aria-label="Fullscreen">⛶</button>
         </div>
       </div>`;
@@ -69,6 +71,7 @@ export class ToyBoxPlayer {
     this.scrub = q('.tb-scrub');
     this.timeLabel = q('.tb-time');
     this.muteBtn = q('.tb-mute');
+    this.volume = q('.tb-volume');
     this.playBtn = q('.tb-play');
 
     if (opts.theme) applyTheme(opts.theme, this.root);
@@ -236,8 +239,20 @@ export class ToyBoxPlayer {
     const toggle = () => (this.video.paused ? this.play() : this.pause());
     this.playBtn.onclick = toggle;
     this.muteBtn.onclick = () => {
-      if (!this.media) return;
-      this.media.muted = !this.media.muted;
+      const m = this.media;
+      if (!m) return;
+      // Volume 0 counts as muted: the button always means "make it audible" when silent.
+      if (m.muted || m.volume < 0.05) {
+        if (m.volume < 0.05) m.volume = 1;
+        m.muted = false;
+      } else m.muted = true;
+      this.renderControls();
+    };
+    this.volume.oninput = () => {
+      const m = this.media;
+      if (!m) return;
+      m.volume = Number(this.volume.value);
+      if (m.volume > 0 && m.muted) m.muted = false;
       this.renderControls();
     };
     // A click-catcher over the video: toggles play, and stops YouTube/Vimeo
@@ -270,11 +285,13 @@ export class ToyBoxPlayer {
       this.scrub.value = String(Math.round((v.currentTime / v.duration) * 1000));
     }
     this.timeLabel.textContent = `${fmt(v.currentTime)} / ${fmt(v.duration || 0)}`;
-    if (this.shownMuted !== v.muted) {
-      this.shownMuted = v.muted;
-      this.muteBtn.innerHTML = v.muted ? ICON_MUTED : ICON_SOUND;
-      this.muteBtn.setAttribute('aria-label', v.muted ? 'Unmute' : 'Mute');
-      this.muteBtn.classList.toggle('tb-muted', v.muted);
+    if (document.activeElement !== this.volume) this.volume.value = String(v.muted ? 0 : v.volume);
+    const silent = v.muted || v.volume < 0.05;
+    if (this.shownMuted !== silent) {
+      this.shownMuted = silent;
+      this.muteBtn.innerHTML = silent ? ICON_MUTED : ICON_SOUND;
+      this.muteBtn.setAttribute('aria-label', silent ? 'Unmute' : 'Mute');
+      this.muteBtn.classList.toggle('tb-muted', silent);
     }
   }
 
@@ -307,6 +324,7 @@ const EMPTY_MEDIA: PlayerMedia = {
   paused: true,
   readyState: 0,
   muted: false,
+  volume: 1,
   play: () => Promise.resolve(),
   pause: () => {},
   addEventListener: () => {},
