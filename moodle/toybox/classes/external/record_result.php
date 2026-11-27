@@ -66,13 +66,23 @@ class record_result extends external_api {
         require_capability('mod/toybox:submit', $context);
 
         $toy = $DB->get_record('toybox_toy', ['id' => $toyid, 'toyboxid' => $cm->instance], '*', MUST_EXIST);
-        toys::record_result($toy, $USER->id, $result);
+        $stored = toys::record_result($toy, $USER->id, $result);
+        if ($stored) {
+            \mod_toybox\event\result_submitted::create([
+                'context' => $context,
+                'objectid' => $toy->id,
+                'other' => ['toyboxid' => (int) $toy->toyboxid],
+            ])->trigger();
+        }
 
         $completion = new completion_info($course);
         $complete = false;
         if ($completion->is_enabled($cm)) {
-            $completion->update_state($cm, COMPLETION_UNKNOWN, $USER->id);
             $complete = $completion->get_data($cm, false, $USER->id)->completionstate == COMPLETION_COMPLETE;
+            if (!$complete && $stored) {
+                $completion->update_state($cm, COMPLETION_UNKNOWN, $USER->id);
+                $complete = $completion->get_data($cm, false, $USER->id)->completionstate == COMPLETION_COMPLETE;
+            }
         }
         return ['saved' => true, 'activitycomplete' => $complete];
     }

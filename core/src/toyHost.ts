@@ -51,7 +51,23 @@ export class ToyFrame {
     }
     this.el = f;
     window.addEventListener('message', this.onMessage);
+
+    // A toy must never leave its own page: browsers can't stop a sandboxed frame
+    // navigating itself (that's how data could be sent out), so if the frame loads
+    // a second time, stop it and tell the host.
+    let loads = 0;
+    f.addEventListener('load', () => {
+      if (++loads > 1 && !this.stopped) {
+        this.stopped = true;
+        f.removeAttribute('src');
+        f.srcdoc = '';
+        this.opts.emit({ type: 'navigated' }, this.spec);
+      }
+    });
   }
+
+  /** True once the toy was stopped for navigating away. */
+  stopped = false;
 
   /** Send a message to the toy (queued until the toy says it's ready). */
   post(msg: object) {
@@ -130,16 +146,20 @@ export function toyCsp(sdkUrl: string) {
 /**
  * Get an educator's toy HTML ready to run: point its SDK <script> at the real
  * SDK (adding one if they forgot), and lock it down with a CSP.
+ *
+ * The policy goes at the very start of the document, before anything the toy's
+ * author wrote, so nothing in the toy can run before it or hide it (for example
+ * inside a comment or ahead of <head>). Content after it merges into the same
+ * document as usual.
  */
 export function prepareToyHtml(html: string, sdkUrl: string, lockdown = true): string {
-  const sdkTag = `<script src="${sdkUrl}"></script>`;
-  let out = /toybox-sdk\.js/.test(html)
-    ? html.replace(/(["'])[^"']*toybox-sdk\.js\1/g, `"${sdkUrl}"`)
-    : html;
-  const head =
+  const usesSdk = /toybox-sdk\.js/.test(html);
+  const body = (usesSdk ? html.replace(/(["'])[^"']*toybox-sdk\.js\1/g, `"${sdkUrl}"`) : html)
+    // Our doctype comes first; a second one would only be ignored.
+    .replace(/^\s*<!doctype[^>]*>/i, '');
+  const start =
+    '<!doctype html><meta charset="utf-8">' +
     (lockdown ? `<meta http-equiv="Content-Security-Policy" content="${toyCsp(sdkUrl)}">` : '') +
-    (/toybox-sdk\.js/.test(html) ? '' : sdkTag);
-  if (/<head[^>]*>/i.test(out)) return out.replace(/<head[^>]*>/i, (m) => m + head);
-  if (/<html[^>]*>/i.test(out)) return out.replace(/<html[^>]*>/i, (m) => m + '<head>' + head + '</head>');
-  return head + out;
+    (usesSdk ? '' : `<script src="${sdkUrl}"></script>`);
+  return start + body;
 }

@@ -36,4 +36,40 @@ if ($ADMIN->fulltree) {
             'toybox' => get_string('theme_toybox', 'toybox'),
         ]
     ));
+
+    $settings->add(new admin_setting_heading('mod_toybox/limits', get_string('settings_limits', 'toybox'), ''));
+    $settings->add(new admin_setting_configcheckbox(
+        'mod_toybox/bundledonly',
+        get_string('bundledonly', 'toybox'),
+        get_string('bundledonly_desc', 'toybox'),
+        0
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_toybox/maxtoys',
+        get_string('maxtoys', 'toybox'),
+        get_string('maxtoys_desc', 'toybox'),
+        50,
+        PARAM_INT
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_toybox/maxtoysize',
+        get_string('maxtoysize', 'toybox'),
+        get_string('maxtoysize_desc', 'toybox'),
+        1024,
+        PARAM_INT
+    ));
+    $settings->add(new admin_setting_configselect(
+        'mod_toybox/maxvideobytes',
+        get_string('maxvideobytes', 'toybox'),
+        get_string('maxvideobytes_desc', 'toybox'),
+        0,
+        get_max_upload_sizes($CFG->maxbytes)
+    ));
+    $settings->add(new admin_setting_configtextarea(
+        'mod_toybox/videohosts',
+        get_string('videohosts', 'toybox'),
+        get_string('videohosts_desc', 'toybox'),
+        '',
+        PARAM_TEXT
+    ));
 }

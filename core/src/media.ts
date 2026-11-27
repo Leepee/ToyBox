@@ -288,258 +288,276 @@ abstract class EmbedMedia implements PlayerMedia {
   protected abstract applyVolume(v: number): void;
 }
 
-const scripts = new Map<string, Promise<void>>();
-function loadScript(src: string): Promise<void> {
-  if (!scripts.has(src)) {
-    scripts.set(
-      src,
-      new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src;
-        s.async = true;
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error(`Couldn't load ${src}`));
-        document.head.appendChild(s);
-      }),
-    );
-  }
-  return scripts.get(src)!;
-}
-
 // ---------------------------------------------------------------------------
+// YouTube, Vimeo and Panopto are driven by talking to their player frames with
+// postMessage, the same messages their own API scripts send. So none of their
+// scripts ever run in the host page (a Moodle or WordPress page with the
+// viewer's session); their code stays inside their own cross-origin frames.
 
-let ytReady: Promise<any> | null = null;
-function loadYouTubeApi(): Promise<any> {
-  const w = window as any;
-  if (w.YT?.Player) return Promise.resolve(w.YT);
-  ytReady ??= new Promise((resolve, reject) => {
-    const prev = w.onYouTubeIframeAPIReady;
-    w.onYouTubeIframeAPIReady = () => {
-      prev?.();
-      resolve(w.YT);
-    };
-    loadScript('https://www.youtube.com/iframe_api').catch(reject);
-  });
-  return ytReady;
+/** Parse a message that may arrive as a JSON string or an object. */
+function parseMessage(data: unknown): any {
+  if (typeof data !== 'string') return data;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
 }
 
-/** A YouTube video, controlled through the IFrame Player API. */
-export class YouTubeMedia extends EmbedMedia {
-  readonly kind = 'youtube' as const;
-  private yt: any = null;
-  private poll = 0;
-  private pending: (() => void)[] = [];
+/** An embedded player in a cross-origin iframe, controlled by messages. */
+abstract class FrameMedia extends EmbedMedia {
+  protected frame: HTMLIFrameElement;
+  private onMessage = (e: MessageEvent) => {
+    // Only this player's own frame, from the site it should come from.
+    if (e.source !== this.frame.contentWindow || e.origin !== this.origin) return;
+    const d = parseMessage(e.data);
+    if (d && typeof d === 'object') this.receive(d);
+  };
 
-  constructor(readonly videoId: string) {
+  constructor(
+    protected readonly origin: string,
+    src: string,
+  ) {
     super();
-    loadYouTubeApi()
-      .then((YT) => {
-        this.yt = new YT.Player(this.target, {
-          host: 'https://www.youtube-nocookie.com',
-          videoId,
-          width: '100%',
-          height: '100%',
-          playerVars: {
-            controls: 0, // ToyBox draws its own controls
-            disablekb: 1,
-            fs: 0,
-            rel: 0,
-            playsinline: 1,
-            iv_load_policy: 3,
-            modestbranding: 1,
-            enablejsapi: 1,
-            origin: location.origin,
-          },
-          events: {
-            onReady: () => {
-              this.setDuration(this.yt.getDuration?.() ?? NaN);
-              this.markReady();
-              for (const fn of this.pending.splice(0)) fn();
-            },
-            onStateChange: (e: { data: number }) => this.onState(e.data),
-          },
-        });
-      })
-      .catch(() => this.emit('error'));
+    const f = (this.frame = document.createElement('iframe'));
+    f.src = src;
+    f.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
+    f.setAttribute('allowfullscreen', '');
+    f.width = '100%';
+    f.height = '100%';
+    f.style.border = '0';
+    this.target.appendChild(f);
+    window.addEventListener('message', this.onMessage);
   }
 
-  private call(fn: () => void) {
-    if (this.ready) fn();
-    else this.pending.push(fn);
+  /** Post to the player frame (only ever to the player's own site). */
+  protected post(msg: unknown, asString = true) {
+    this.frame.contentWindow?.postMessage(asString ? JSON.stringify(msg) : msg, this.origin);
   }
+  protected abstract receive(d: any): void;
 
-  private onState(s: number) {
-    // -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued
-    this.setDuration(this.yt.getDuration?.() ?? NaN);
-    if (s === 1 || s === 3) {
-      this.report(this.yt.getCurrentTime());
-      this.setStalled(s === 3);
-      this.setPlaying(true);
-      this.startPolling();
-    } else if (s === 2 || s === 0) {
-      this.report(this.yt.getCurrentTime());
-      this.setPlaying(false);
-      this.stopPolling();
-      if (s === 0) this.emit('ended');
-    }
-  }
-
-  private startPolling() {
-    if (this.poll) return;
-    this.poll = window.setInterval(() => {
-      if (!this.yt?.getCurrentTime) return;
-      this.report(this.yt.getCurrentTime());
-      if (this.yt.isMuted) this.syncMuted(this.yt.isMuted());
-      if (this.yt.getVolume) this.syncVolume(this.yt.getVolume() / 100);
-      this.emit('timeupdate');
-    }, 250);
-  }
-  private stopPolling() {
-    clearInterval(this.poll);
-    this.poll = 0;
-  }
-
-  protected seekTo(t: number) {
-    this.call(() => {
-      this.yt.seekTo(t, true);
-      // YouTube has no "seeked" event; give it a moment to land.
-      setTimeout(() => this.emit('seeked'), 150);
-    });
-  }
-  protected doPlay() {
-    this.call(() => {
-      this.yt.playVideo();
-      if (!this.userMuted) this.yt.unMute();
-      // A volume of 0 left over from elsewhere is never what the viewer wants.
-      if (!this.userVolume && this.yt.getVolume?.() === 0) this.yt.setVolume(100);
-    });
-  }
-  protected applyVolume(v: number) {
-    this.call(() => this.yt.setVolume(Math.round(v * 100)));
-  }
-  protected doPause() {
-    this.call(() => this.yt.pauseVideo());
-  }
-  protected setMuted(m: boolean) {
-    this.call(() => (m ? this.yt.mute() : this.yt.unMute()));
-  }
   destroy() {
-    this.stopPolling();
-    try {
-      this.yt?.destroy();
-    } catch {
-      /* already gone */
-    }
+    window.removeEventListener('message', this.onMessage);
     super.destroy();
   }
 }
 
 // ---------------------------------------------------------------------------
 
-const VIMEO_API = 'https://player.vimeo.com/api/player.js';
-let vimeoReady: Promise<any> | null = null;
+const YT_ORIGIN = 'https://www.youtube-nocookie.com';
 
-/**
- * Loads Vimeo's Player constructor. Vimeo's script is UMD: on pages with an AMD
- * loader (RequireJS in Moodle) it registers itself as an anonymous module instead
- * of setting window.Vimeo, so there it must be loaded through the loader.
- */
-function loadVimeoApi(): Promise<any> {
-  const w = window as any;
-  if (w.Vimeo?.Player) return Promise.resolve(w.Vimeo.Player);
-  vimeoReady ??=
-    typeof w.define === 'function' && w.define.amd && typeof w.require === 'function'
-      ? new Promise((resolve, reject) => w.require([VIMEO_API], (Player: any) => resolve(Player ?? w.Vimeo?.Player), reject))
-      : loadScript(VIMEO_API).then(() => w.Vimeo.Player);
-  return vimeoReady;
+/** A YouTube video (privacy-enhanced mode), through the IFrame API's message channel. */
+export class YouTubeMedia extends FrameMedia {
+  readonly kind = 'youtube' as const;
+  private hello = 0;
+  private pending: (() => void)[] = [];
+  private state = -1;
+  private vol100 = 100;
+
+  constructor(readonly videoId: string) {
+    const q = new URLSearchParams({
+      enablejsapi: '1',
+      controls: '0', // ToyBox draws its own controls
+      disablekb: '1',
+      fs: '0',
+      rel: '0',
+      playsinline: '1',
+      iv_load_policy: '3',
+      modestbranding: '1',
+      origin: location.origin,
+    });
+    super(YT_ORIGIN, `${YT_ORIGIN}/embed/${encodeURIComponent(videoId)}?${q}`);
+    // Say hello until the player answers (it ignores messages sent before it has loaded).
+    const listen = () => this.post({ event: 'listening', id: 1, channel: 'widget' });
+    this.frame.addEventListener('load', () => {
+      listen();
+      if (!this.hello) this.hello = window.setInterval(listen, 250);
+    });
+  }
+
+  private command(func: string, args: unknown[] = []) {
+    const send = () => this.post({ event: 'command', func, args, id: 1, channel: 'widget' });
+    if (this.ready) send();
+    else this.pending.push(send);
+  }
+
+  protected receive(d: any) {
+    if (d.event === 'onReady' || d.event === 'initialDelivery') {
+      clearInterval(this.hello);
+      this.hello = -1;
+    }
+    if (d.event === 'initialDelivery' || d.event === 'infoDelivery') this.info(d.info ?? {});
+    if (d.event === 'onReady' && !this.ready) {
+      this.post({ event: 'command', func: 'addEventListener', args: ['onStateChange'], id: 1, channel: 'widget' });
+      this.markReady();
+      for (const fn of this.pending.splice(0)) fn();
+    }
+    if (d.event === 'onStateChange' && typeof d.info === 'number') this.onState(d.info);
+  }
+
+  private info(i: any) {
+    if (typeof i.duration === 'number') this.setDuration(i.duration);
+    if (typeof i.muted === 'boolean') this.syncMuted(i.muted);
+    if (typeof i.volume === 'number') {
+      this.vol100 = i.volume;
+      this.syncVolume(i.volume / 100);
+    }
+    if (typeof i.playerState === 'number' && i.playerState !== this.state) this.onState(i.playerState);
+    if (typeof i.currentTime === 'number') {
+      this.report(i.currentTime);
+      if (this.state === 1) this.emit('timeupdate');
+    }
+  }
+
+  private onState(s: number) {
+    // -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued
+    this.state = s;
+    if (s === 1 || s === 3) {
+      this.setStalled(s === 3);
+      this.setPlaying(true);
+    } else if (s === 2 || s === 0) {
+      this.setPlaying(false);
+      if (s === 0) this.emit('ended');
+    }
+  }
+
+  protected seekTo(t: number) {
+    this.command('seekTo', [t, true]);
+    // YouTube has no "seeked" event; give it a moment to land.
+    setTimeout(() => this.emit('seeked'), 150);
+  }
+  protected doPlay() {
+    this.command('playVideo');
+    if (!this.userMuted) this.command('unMute');
+    // A volume of 0 left over from elsewhere is never what the viewer wants.
+    if (!this.userVolume && this.vol100 === 0) this.command('setVolume', [100]);
+  }
+  protected applyVolume(v: number) {
+    this.command('setVolume', [Math.round(v * 100)]);
+  }
+  protected doPause() {
+    this.command('pauseVideo');
+  }
+  protected setMuted(m: boolean) {
+    this.command(m ? 'mute' : 'unMute');
+  }
+  destroy() {
+    clearInterval(this.hello);
+    super.destroy();
+  }
 }
 
-/** A Vimeo video, controlled through Vimeo's Player.js API. */
-export class VimeoMedia extends EmbedMedia {
+// ---------------------------------------------------------------------------
+
+const VIMEO_ORIGIN = 'https://player.vimeo.com';
+const VIMEO_EVENTS = ['play', 'pause', 'ended', 'timeupdate', 'seeked', 'bufferstart', 'bufferend', 'volumechange'];
+
+/** A Vimeo video, through the message channel Vimeo's Player.js uses. */
+export class VimeoMedia extends FrameMedia {
   readonly kind = 'vimeo' as const;
-  private vp: any = null;
   private pending: (() => void)[] = [];
+  private gotReady = false;
 
   constructor(
     readonly videoId: string,
     readonly hash?: string,
   ) {
-    super();
-    loadVimeoApi()
-      .then((VimeoPlayer) => {
-        const opts: Record<string, unknown> = { controls: false, dnt: true, playsinline: true, title: false, byline: false, portrait: false };
-        if (hash) opts.url = `https://vimeo.com/${videoId}/${hash}`;
-        else opts.id = Number(videoId);
-        this.vp = new VimeoPlayer(this.target, opts);
-        this.vp.on('loaded', () => {
-          this.vp.getDuration().then((d: number) => {
-            this.setDuration(d);
-            this.markReady();
-            for (const fn of this.pending.splice(0)) fn();
-          });
-        });
-        this.vp.on('play', (d: { seconds: number }) => {
-          this.report(d?.seconds ?? this.currentTime);
-          this.setPlaying(true);
-        });
-        this.vp.on('pause', (d: { seconds: number }) => {
-          this.report(d?.seconds ?? this.currentTime);
-          this.setPlaying(false);
-        });
-        this.vp.on('ended', () => {
-          this.setPlaying(false);
-          this.emit('ended');
-        });
-        this.vp.on('timeupdate', (d: { seconds: number; duration: number }) => {
-          this.report(d.seconds);
-          this.setDuration(d.duration);
-          this.emit('timeupdate');
-        });
-        this.vp.on('seeked', (d: { seconds: number }) => {
-          this.report(d.seconds);
-          this.emit('seeked');
-        });
-        this.vp.on('bufferstart', () => this.setStalled(true));
-        this.vp.on('bufferend', () => this.setStalled(false));
-      })
-      .catch(() => this.emit('error'));
+    const q = new URLSearchParams({
+      ...(hash ? { h: hash } : {}),
+      api: '1',
+      controls: '0',
+      dnt: '1',
+      playsinline: '1',
+      title: '0',
+      byline: '0',
+      portrait: '0',
+    });
+    super(VIMEO_ORIGIN, `${VIMEO_ORIGIN}/video/${encodeURIComponent(videoId)}?${q}`);
   }
 
-  private call(fn: () => void) {
-    if (this.ready) fn();
-    else this.pending.push(fn);
+  private send(method: string, value?: unknown) {
+    this.post(value === undefined ? { method } : { method, value }, false);
   }
+  private call(method: string, value?: unknown) {
+    const go = () => this.send(method, value);
+    if (this.ready) go();
+    else this.pending.push(go);
+  }
+
+  protected receive(d: any) {
+    if (d.event === 'ready' && !this.gotReady) {
+      this.gotReady = true;
+      for (const ev of VIMEO_EVENTS) this.send('addEventListener', ev);
+      this.send('getDuration');
+      this.send('getVolume');
+      this.send('getMuted');
+      return;
+    }
+    // Answers to get… calls.
+    if (d.method === 'getDuration' && typeof d.value === 'number') {
+      this.setDuration(d.value);
+      if (!this.ready) {
+        this.markReady();
+        for (const fn of this.pending.splice(0)) fn();
+      }
+    } else if (d.method === 'getVolume' && typeof d.value === 'number') {
+      this.syncVolume(d.value);
+    } else if (d.method === 'getMuted' && typeof d.value === 'boolean') {
+      this.syncMuted(d.value);
+    }
+    const data = d.data ?? {};
+    switch (d.event) {
+      case 'play':
+        if (typeof data.seconds === 'number') this.report(data.seconds);
+        this.setPlaying(true);
+        break;
+      case 'pause':
+        if (typeof data.seconds === 'number') this.report(data.seconds);
+        this.setPlaying(false);
+        break;
+      case 'ended':
+        this.setPlaying(false);
+        this.emit('ended');
+        break;
+      case 'timeupdate':
+        if (typeof data.seconds === 'number') this.report(data.seconds);
+        if (typeof data.duration === 'number') this.setDuration(data.duration);
+        this.emit('timeupdate');
+        break;
+      case 'seeked':
+        if (typeof data.seconds === 'number') this.report(data.seconds);
+        this.emit('seeked');
+        break;
+      case 'bufferstart':
+        this.setStalled(true);
+        break;
+      case 'bufferend':
+        this.setStalled(false);
+        break;
+      case 'volumechange':
+        if (typeof data.volume === 'number') this.syncVolume(data.volume);
+        if (typeof data.muted === 'boolean') this.syncMuted(data.muted);
+        break;
+    }
+  }
+
   protected seekTo(t: number) {
-    this.call(() => this.vp.setCurrentTime(t).catch(() => {}));
+    this.call('setCurrentTime', t);
   }
   protected doPlay() {
-    this.call(() => {
-      this.vp.play().catch(() => {});
-      if (!this.userMuted) this.vp.setMuted(false).catch(() => {});
-      Promise.resolve(this.vp.getMuted?.())
-        .then((m: boolean | undefined) => m !== undefined && this.syncMuted(!!m))
-        .catch(() => {});
-      Promise.resolve(this.vp.getVolume?.())
-        .then((v: number | undefined) => {
-          if (v === undefined) return;
-          if (!this.userVolume && v === 0) return this.vp.setVolume(1).then(() => this.syncVolume(1));
-          this.syncVolume(v);
-        })
-        .catch(() => {});
-    });
+    this.call('play');
+    if (!this.userMuted) this.call('setMuted', false);
+    // A volume of 0 left over from elsewhere is never what the viewer wants.
+    if (!this.userVolume && this.volume === 0) this.call('setVolume', 1);
   }
   protected applyVolume(v: number) {
-    this.call(() => this.vp.setVolume(v).catch(() => {}));
+    this.call('setVolume', v);
   }
   protected doPause() {
-    this.call(() => this.vp.pause().catch(() => {}));
+    this.call('pause');
   }
   protected setMuted(m: boolean) {
-    this.call(() => this.vp.setMuted(m).catch(() => {}));
-  }
-  destroy() {
-    this.vp?.destroy().catch(() => {});
-    super.destroy();
+    this.call('setMuted', m);
   }
 }
 
@@ -548,62 +566,48 @@ export class VimeoMedia extends EmbedMedia {
 let panoptoCount = 0;
 
 /**
- * A Panopto session, controlled through Panopto's Embed API.
+ * A Panopto session, through the message channel Panopto's Embed API uses.
  *
- * Panopto's loadVideo() starts playback immediately, and playback that doesn't
+ * Panopto's "load" starts playback immediately, and playback that doesn't
  * come from a click is forced to start muted. So the video is only loaded when
  * the viewer first presses play: nothing streams before then, and that first
  * play is a real click, so it has sound. Seeks before then are remembered.
  */
-export class PanoptoMedia extends EmbedMedia {
+export class PanoptoMedia extends FrameMedia {
   readonly kind = 'panopto' as const;
-  private api: any = null;
-  private poll = 0;
-  private lastReported = -1;
+  private readonly embedId: string;
   private iframeReady = false;
   private loaded = false;
   private beforeIframe: (() => void)[] = [];
   private afterLoad: (() => void)[] = [];
   private pendingSeek: number | null = null;
+  private lastReported = -1;
+  private remote = { volume: 1, isMuted: false, isPaused: true, isFinished: false };
 
   constructor(
     readonly server: string,
     readonly sessionId: string,
   ) {
-    super();
-    // EmbedApi finds its container by id.
-    this.target.id = `tb-panopto-${++panoptoCount}`;
-    loadScript('https://developers.panopto.com/scripts/embedapi.min.js')
-      .then(() => {
-        const EmbedApi = (window as any).EmbedApi;
-        this.api = new EmbedApi(this.target.id, {
-          width: '100%',
-          height: '100%',
-          serverName: server,
-          sessionId,
-          videoParams: {
-            // Keep Panopto's own UI out of the way: ToyBox draws the controls.
-            interactivity: 'none',
-            showtitle: 'false',
-            showbrand: 'false',
-            offerviewer: 'false',
-            autoplay: 'false',
-          },
-          events: {
-            onIframeReady: () => {
-              this.iframeReady = true;
-              for (const fn of this.beforeIframe.splice(0)) fn();
-            },
-            onReady: () => this.onLoaded(),
-            onStateChange: (state: number) => this.onState(state),
-            onLoginShown: () => this.emit('login'),
-            onError: () => this.emit('error'),
-          },
-        });
-      })
-      .catch(() => this.emit('error'));
+    const embedId = `tb-panopto-${++panoptoCount}`;
+    const q = new URLSearchParams({
+      id: sessionId,
+      remoteEmbed: 'true',
+      remoteHost: location.origin,
+      embedApiId: embedId,
+      // Keep Panopto's own UI out of the way: ToyBox draws the controls.
+      interactivity: 'none',
+      showtitle: 'false',
+      showbrand: 'false',
+      offerviewer: 'false',
+      autoplay: 'false',
+    });
+    super(`https://${server}`, `https://${server}/Panopto/Pages/Embed.aspx?${q}`);
+    this.embedId = embedId;
   }
 
+  private send(msg: string, data: unknown = '') {
+    this.post({ msg, source: 'PanoptoEmbed', id: this.embedId, data });
+  }
   /** Runs once the iframe can take commands. */
   private whenIframe(fn: () => void) {
     if (this.iframeReady) fn();
@@ -615,55 +619,60 @@ export class PanoptoMedia extends EmbedMedia {
     else this.afterLoad.push(fn);
   }
 
+  protected receive(d: any) {
+    if (d.source !== 'PanoptoEmbed' || (d.id !== this.embedId && d.id !== '*')) return;
+    switch (d.msg) {
+      case 'embedIframeReady':
+        this.iframeReady = true;
+        for (const fn of this.beforeIframe.splice(0)) fn();
+        break;
+      case 'iframeError':
+        this.emit('error');
+        break;
+      case 'iframeLoginShown':
+        this.emit('login');
+        break;
+      case 'iframeState':
+        this.onIframeState(d.data ?? {});
+        break;
+    }
+  }
+
+  private onIframeState(p: any) {
+    this.remote = { volume: p.volume, isMuted: p.isMuted, isPaused: p.isPaused, isFinished: p.isFinished };
+    if (typeof p.duration === 'number') this.setDuration(p.duration);
+    if (typeof p.isMuted === 'boolean') this.syncMuted(p.isMuted);
+    if (typeof p.volume === 'number') this.syncVolume(p.volume);
+    // Take Panopto's time only when it has actually changed.
+    if (typeof p.currentTime === 'number' && p.currentTime !== this.lastReported) {
+      this.lastReported = p.currentTime;
+      this.report(p.currentTime);
+    }
+    if (p.trigger !== 'iframeStateUpdate') {
+      if (!p.isPaused) this.emit('timeupdate');
+      return;
+    }
+    if (!this.ready) this.onLoaded();
+    if (p.isFinished) {
+      this.setPlaying(false);
+      this.emit('ended');
+    } else {
+      this.setPlaying(!p.isPaused);
+    }
+  }
+
   private onLoaded() {
-    this.setDuration(this.api.getDuration());
     this.markReady();
     if (this.pendingSeek !== null) {
-      this.api.seekTo(this.pendingSeek);
+      this.send('iframeSeek', this.pendingSeek);
       this.lastReported = -1;
       this.pendingSeek = null;
     }
-    if (this.userMuted) this.api.muteVideo();
-    else this.api.unmuteVideo();
+    this.send(this.userMuted ? 'iframeMute' : 'iframeUnmute');
     // Panopto remembers each viewer's volume; a leftover 0 is never wanted.
-    if (this.userVolume) this.api.setVolume(this.volume);
-    else if (this.api.getVolume() === 0) this.api.setVolume(1);
+    if (this.userVolume) this.send('iframeVolume', this.volume);
+    else if (this.remote.volume === 0) this.send('iframeVolume', 1);
     for (const fn of this.afterLoad.splice(0)) fn();
-    this.sync();
-  }
-
-  /** Take Panopto's time only when it has actually changed. */
-  private sync() {
-    if (!this.ready) return;
-    const t = this.api?.getCurrentTime?.();
-    if (typeof t === 'number' && t !== this.lastReported) {
-      this.lastReported = t;
-      this.report(t);
-    }
-    this.setDuration(this.api?.getDuration?.() ?? NaN);
-    const m = this.api?.isMuted?.();
-    if (typeof m === 'boolean') this.syncMuted(m);
-    const v = this.api?.getVolume?.();
-    if (typeof v === 'number') this.syncVolume(v);
-  }
-
-  private onState(state: number) {
-    // PlayerState: 0 ended, 1 playing, 2 paused
-    this.sync();
-    if (state === 1) {
-      this.setPlaying(true);
-      if (!this.poll) {
-        this.poll = window.setInterval(() => {
-          this.sync();
-          this.emit('timeupdate');
-        }, 250);
-      }
-    } else {
-      this.setPlaying(false);
-      clearInterval(this.poll);
-      this.poll = 0;
-      if (state === 0) this.emit('ended');
-    }
   }
 
   protected seekTo(t: number) {
@@ -673,7 +682,7 @@ export class PanoptoMedia extends EmbedMedia {
       setTimeout(() => this.emit('seeked'), 0);
       return;
     }
-    this.api.seekTo(t);
+    this.send('iframeSeek', t);
     this.lastReported = -1;
     setTimeout(() => this.emit('seeked'), 200);
   }
@@ -681,24 +690,20 @@ export class PanoptoMedia extends EmbedMedia {
     this.whenIframe(() => {
       if (!this.loaded) {
         this.loaded = true;
-        this.api.loadVideo(); // loads and starts playing
+        this.send('iframeLoad'); // loads and starts playing
         return;
       }
-      this.api.playVideo();
-      if (!this.userMuted) this.api.unmuteVideo();
+      this.send('iframePlay');
+      if (!this.userMuted) this.send('iframeUnmute');
     });
   }
   protected doPause() {
-    if (this.loaded) this.whenLoaded(() => this.api.pauseVideo());
+    if (this.loaded) this.whenLoaded(() => this.send('iframePause'));
   }
   protected setMuted(m: boolean) {
-    this.whenLoaded(() => (m ? this.api.muteVideo() : this.api.unmuteVideo()));
+    this.whenLoaded(() => this.send(m ? 'iframeMute' : 'iframeUnmute'));
   }
   protected applyVolume(v: number) {
-    this.whenLoaded(() => this.api.setVolume(v));
-  }
-  destroy() {
-    clearInterval(this.poll);
-    super.destroy();
+    this.whenLoaded(() => this.send('iframeVolume', v));
   }
 }

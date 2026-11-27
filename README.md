@@ -120,7 +120,7 @@ Example toys:
 - `fact-card.html`: a non-blocking pop-up in the corner, with a countdown bar
 
 ### Safety
-Toys are written by educators, not by us, so each toy runs in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`. A toy can draw anything inside its own box, but it can't read or change the player page, its cookies or its storage. It can only send the small set of messages listed above, and the player checks every one of them (`src/toyHost.ts`).
+Toys are written by educators, not by us, so each toy runs in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`. A toy can draw anything inside its own box, but it can't read or change the player page, its cookies or its storage. It can only send the small set of messages listed above, and the player checks every one of them (`core/src/toyHost.ts`). A content policy blocks all network access; in Moodle and WordPress it's an HTTP header on each toy's own address. A toy that navigates its frame is stopped. See [SECURITY.md](SECURITY.md).
 
 ## Demo lessons
 - **Sine Waves** (`lessons/sine-waves.json`): a 95-second lesson covering amplitude, frequency, phase and the FFT, with Wave Lab, a quiz, Phase Lab, Fourier Lab and three fact cards. The video is drawn in code by `scripts/render_sine_video.py` (numpy + Pillow + ffmpeg), so the waves on screen are exact and the soundtrack is generated from the same maths. Re-run it after you change the script.

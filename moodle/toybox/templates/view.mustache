@@ -30,6 +30,7 @@
         "viewurl": "https://example.com/mod/toybox/view.php?id=1",
         "notoys": false,
         "istoy": false,
+        "review": {"message": "These toys were restored from a backup.", "url": "https://example.com/mod/toybox/review.php", "cmid": 1, "sesskey": "abc"},
         "configjson": "{}"
     }
 }}
@@ -49,6 +50,15 @@
             </div>
         {{/notoys}}
     {{/canedit}}
+    {{#review}}
+        <form class="alert alert-warning mod-toybox-review" method="post" action="{{url}}">
+            <span>{{message}}</span>
+            <input type="hidden" name="id" value="{{cmid}}">
+            <input type="hidden" name="sesskey" value="{{sesskey}}">
+            <a class="btn btn-secondary btn-sm ms-2 ml-2" href="{{editurl}}">{{#str}} edittoys, mod_toybox {{/str}}</a>
+            <button type="submit" class="btn btn-primary btn-sm ms-2 ml-2">{{#str}} markreviewed, mod_toybox {{/str}}</button>
+        </form>
+    {{/review}}
     {{#notice}}
         <div class="alert alert-warning">{{notice}}</div>
     {{/notice}}

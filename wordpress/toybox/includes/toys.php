@@ -135,9 +135,7 @@ function toybox_save_post( $post_id ) {
 	// Toy code is raw HTML by design (administrators only; it runs sandboxed), so it is not run through KSES.
 	$toys = isset( $_POST['toybox_toys'] ) ? json_decode( wp_unslash( $_POST['toybox_toys'] ), true ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 	$toys = is_array( $toys ) ? array_values( array_filter( array_map( 'toybox_clean_toy', $toys, array_keys( $toys ) ) ) ) : array();
-	if ( 'toy' === $mode ) {
-		$toys = array_slice( $toys, 0, 1 ); // A toy on its own is a single toy.
-	}
+	$toys = array_slice( $toys, 0, 'toy' === $mode ? 1 : 50 ); // A toy on its own is a single toy.
 	$data = array(
 		'mode'   => $mode,
 		'aspect' => in_array( $aspect, TOYBOX_ASPECTS, true ) ? $aspect : '16:9',

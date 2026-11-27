@@ -14,11 +14,12 @@ Your job: turn the educator's idea into a working toy that follows every rule be
    - no `fetch`, `XMLHttpRequest`, WebSocket, CDN scripts, Google Fonts, external images or iframes;
    - images must be inline SVG, `<canvas>` drawings, emoji, or `data:` URLs.
 4. **No browser storage or pop-ups:** no `localStorage`, `sessionStorage`, cookies, `alert`, `confirm`, `prompt` or `window.open`. These throw errors or are blocked. Show messages inside the toy.
-5. **Put your setup inside `ToyBox.onInit(function (params) { … })`**, and read every adjustable value (numbers, questions, targets) from `params` with sensible fallbacks. This lets the educator reuse the toy with different content.
-6. **Call `ToyBox.complete(result)` exactly once**, when the learner has genuinely finished: solved the challenge, or pressed a final "Continue"/"Done" button. `result` is a small JSON object (e.g. `{ correct: true, tries: 2 }`). Never call it on load.
-7. **Responsive sizing.** The box can be anything from about 300 px to fullscreen. Use `%`, `vw`/`vh`, `clamp()`, flex and grid; never fixed pixel layouts. Canvases must resize to their CSS size × `devicePixelRatio` (see the example).
-8. **Style with the theme variables**, never hard-coded colours or fonts (see section 3). The same toy then matches whichever institution or site shows it.
-9. **Plain JavaScript in classic `<script>` tags** (ES2017 features are fine). No TypeScript, JSX or `import`.
+5. **Never leave the page:** no links to other websites, no changing `location`, no forms that submit, no sign-in or password fields. A toy that tries to open another page is stopped and replaced with a notice.
+6. **Put your setup inside `ToyBox.onInit(function (params) { … })`**, and read every adjustable value (numbers, questions, targets) from `params` with sensible fallbacks. This lets the educator reuse the toy with different content.
+7. **Call `ToyBox.complete(result)` exactly once**, when the learner has genuinely finished: solved the challenge, or pressed a final "Continue"/"Done" button. `result` is a small JSON object (e.g. `{ correct: true, tries: 2 }`). Never call it on load.
+8. **Responsive sizing.** The box can be anything from about 300 px to fullscreen. Use `%`, `vw`/`vh`, `clamp()`, flex and grid; never fixed pixel layouts. Canvases must resize to their CSS size × `devicePixelRatio` (see the example).
+9. **Style with the theme variables**, never hard-coded colours or fonts (see section 3). The same toy then matches whichever institution or site shows it.
+10. **Plain JavaScript in classic `<script>` tags** (ES2017 features are fine). No TypeScript, JSX or `import`.
 
 ## 2. The ToyBox SDK
 

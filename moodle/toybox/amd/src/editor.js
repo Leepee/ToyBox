@@ -18,6 +18,8 @@ var ToyFrame = class {
     __publicField(this, "ready", false);
     __publicField(this, "queue", []);
     __publicField(this, "onMessage", (e) => this.handle(e));
+    /** True once the toy was stopped for navigating away. */
+    __publicField(this, "stopped", false);
     var _a;
     const f = document.createElement("iframe");
     f.className = "toy";
@@ -32,6 +34,15 @@ var ToyFrame = class {
     }
     this.el = f;
     window.addEventListener("message", this.onMessage);
+    let loads = 0;
+    f.addEventListener("load", () => {
+      if (++loads > 1 && !this.stopped) {
+        this.stopped = true;
+        f.removeAttribute("src");
+        f.srcdoc = "";
+        this.opts.emit({ type: "navigated" }, this.spec);
+      }
+    });
   }
   /** Send a message to the toy (queued until the toy says it's ready). */
   post(msg) {
@@ -100,12 +111,10 @@ function toyCsp(sdkUrl) {
   ].join("; ");
 }
 function prepareToyHtml(html, sdkUrl, lockdown = true) {
-  const sdkTag = `<script src="${sdkUrl}"><\/script>`;
-  let out = /toybox-sdk\.js/.test(html) ? html.replace(/(["'])[^"']*toybox-sdk\.js\1/g, `"${sdkUrl}"`) : html;
-  const head = (lockdown ? `<meta http-equiv="Content-Security-Policy" content="${toyCsp(sdkUrl)}">` : "") + (/toybox-sdk\.js/.test(html) ? "" : sdkTag);
-  if (/<head[^>]*>/i.test(out)) return out.replace(/<head[^>]*>/i, (m) => m + head);
-  if (/<html[^>]*>/i.test(out)) return out.replace(/<html[^>]*>/i, (m) => m + "<head>" + head + "</head>");
-  return head + out;
+  const usesSdk = /toybox-sdk\.js/.test(html);
+  const body = (usesSdk ? html.replace(/(["'])[^"']*toybox-sdk\.js\1/g, `"${sdkUrl}"`) : html).replace(/^\s*<!doctype[^>]*>/i, "");
+  const start = '<!doctype html><meta charset="utf-8">' + (lockdown ? `<meta http-equiv="Content-Security-Policy" content="${toyCsp(sdkUrl)}">` : "") + (usesSdk ? "" : `<script src="${sdkUrl}"><\/script>`);
+  return start + body;
 }
 
 // core/src/media.ts
@@ -333,289 +342,272 @@ var EmbedMedia = class {
     if (Number.isFinite(this.dur)) this.emit("loadedmetadata");
   }
 };
-var scripts = /* @__PURE__ */ new Map();
-function loadScript(src) {
-  if (!scripts.has(src)) {
-    scripts.set(
-      src,
-      new Promise((resolve, reject) => {
-        const s = document.createElement("script");
-        s.src = src;
-        s.async = true;
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error(`Couldn't load ${src}`));
-        document.head.appendChild(s);
-      })
-    );
+function parseMessage(data) {
+  if (typeof data !== "string") return data;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
   }
-  return scripts.get(src);
 }
-var ytReady = null;
-function loadYouTubeApi() {
-  var _a;
-  const w = window;
-  if ((_a = w.YT) == null ? void 0 : _a.Player) return Promise.resolve(w.YT);
-  ytReady != null ? ytReady : ytReady = new Promise((resolve, reject) => {
-    const prev = w.onYouTubeIframeAPIReady;
-    w.onYouTubeIframeAPIReady = () => {
-      prev == null ? void 0 : prev();
-      resolve(w.YT);
-    };
-    loadScript("https://www.youtube.com/iframe_api").catch(reject);
-  });
-  return ytReady;
-}
-var YouTubeMedia = class extends EmbedMedia {
-  constructor(videoId) {
+var FrameMedia = class extends EmbedMedia {
+  constructor(origin, src) {
     super();
+    this.origin = origin;
+    __publicField(this, "frame");
+    __publicField(this, "onMessage", (e) => {
+      if (e.source !== this.frame.contentWindow || e.origin !== this.origin) return;
+      const d = parseMessage(e.data);
+      if (d && typeof d === "object") this.receive(d);
+    });
+    const f = this.frame = document.createElement("iframe");
+    f.src = src;
+    f.allow = "autoplay; fullscreen; encrypted-media; picture-in-picture";
+    f.setAttribute("allowfullscreen", "");
+    f.width = "100%";
+    f.height = "100%";
+    f.style.border = "0";
+    this.target.appendChild(f);
+    window.addEventListener("message", this.onMessage);
+  }
+  /** Post to the player frame (only ever to the player's own site). */
+  post(msg, asString = true) {
+    var _a;
+    (_a = this.frame.contentWindow) == null ? void 0 : _a.postMessage(asString ? JSON.stringify(msg) : msg, this.origin);
+  }
+  destroy() {
+    window.removeEventListener("message", this.onMessage);
+    super.destroy();
+  }
+};
+var YT_ORIGIN = "https://www.youtube-nocookie.com";
+var YouTubeMedia = class extends FrameMedia {
+  constructor(videoId) {
+    const q = new URLSearchParams({
+      enablejsapi: "1",
+      controls: "0",
+      // ToyBox draws its own controls
+      disablekb: "1",
+      fs: "0",
+      rel: "0",
+      playsinline: "1",
+      iv_load_policy: "3",
+      modestbranding: "1",
+      origin: location.origin
+    });
+    super(YT_ORIGIN, `${YT_ORIGIN}/embed/${encodeURIComponent(videoId)}?${q}`);
     this.videoId = videoId;
     __publicField(this, "kind", "youtube");
-    __publicField(this, "yt", null);
-    __publicField(this, "poll", 0);
+    __publicField(this, "hello", 0);
     __publicField(this, "pending", []);
-    loadYouTubeApi().then((YT) => {
-      this.yt = new YT.Player(this.target, {
-        host: "https://www.youtube-nocookie.com",
-        videoId,
-        width: "100%",
-        height: "100%",
-        playerVars: {
-          controls: 0,
-          // ToyBox draws its own controls
-          disablekb: 1,
-          fs: 0,
-          rel: 0,
-          playsinline: 1,
-          iv_load_policy: 3,
-          modestbranding: 1,
-          enablejsapi: 1,
-          origin: location.origin
-        },
-        events: {
-          onReady: () => {
-            var _a, _b, _c;
-            this.setDuration((_c = (_b = (_a = this.yt).getDuration) == null ? void 0 : _b.call(_a)) != null ? _c : NaN);
-            this.markReady();
-            for (const fn of this.pending.splice(0)) fn();
-          },
-          onStateChange: (e) => this.onState(e.data)
-        }
-      });
-    }).catch(() => this.emit("error"));
+    __publicField(this, "state", -1);
+    __publicField(this, "vol100", 100);
+    const listen = () => this.post({ event: "listening", id: 1, channel: "widget" });
+    this.frame.addEventListener("load", () => {
+      listen();
+      if (!this.hello) this.hello = window.setInterval(listen, 250);
+    });
   }
-  call(fn) {
-    if (this.ready) fn();
-    else this.pending.push(fn);
+  command(func, args = []) {
+    const send = () => this.post({ event: "command", func, args, id: 1, channel: "widget" });
+    if (this.ready) send();
+    else this.pending.push(send);
+  }
+  receive(d) {
+    var _a;
+    if (d.event === "onReady" || d.event === "initialDelivery") {
+      clearInterval(this.hello);
+      this.hello = -1;
+    }
+    if (d.event === "initialDelivery" || d.event === "infoDelivery") this.info((_a = d.info) != null ? _a : {});
+    if (d.event === "onReady" && !this.ready) {
+      this.post({ event: "command", func: "addEventListener", args: ["onStateChange"], id: 1, channel: "widget" });
+      this.markReady();
+      for (const fn of this.pending.splice(0)) fn();
+    }
+    if (d.event === "onStateChange" && typeof d.info === "number") this.onState(d.info);
+  }
+  info(i) {
+    if (typeof i.duration === "number") this.setDuration(i.duration);
+    if (typeof i.muted === "boolean") this.syncMuted(i.muted);
+    if (typeof i.volume === "number") {
+      this.vol100 = i.volume;
+      this.syncVolume(i.volume / 100);
+    }
+    if (typeof i.playerState === "number" && i.playerState !== this.state) this.onState(i.playerState);
+    if (typeof i.currentTime === "number") {
+      this.report(i.currentTime);
+      if (this.state === 1) this.emit("timeupdate");
+    }
   }
   onState(s) {
-    var _a, _b, _c;
-    this.setDuration((_c = (_b = (_a = this.yt).getDuration) == null ? void 0 : _b.call(_a)) != null ? _c : NaN);
+    this.state = s;
     if (s === 1 || s === 3) {
-      this.report(this.yt.getCurrentTime());
       this.setStalled(s === 3);
       this.setPlaying(true);
-      this.startPolling();
     } else if (s === 2 || s === 0) {
-      this.report(this.yt.getCurrentTime());
       this.setPlaying(false);
-      this.stopPolling();
       if (s === 0) this.emit("ended");
     }
   }
-  startPolling() {
-    if (this.poll) return;
-    this.poll = window.setInterval(() => {
-      var _a;
-      if (!((_a = this.yt) == null ? void 0 : _a.getCurrentTime)) return;
-      this.report(this.yt.getCurrentTime());
-      if (this.yt.isMuted) this.syncMuted(this.yt.isMuted());
-      if (this.yt.getVolume) this.syncVolume(this.yt.getVolume() / 100);
-      this.emit("timeupdate");
-    }, 250);
-  }
-  stopPolling() {
-    clearInterval(this.poll);
-    this.poll = 0;
-  }
   seekTo(t) {
-    this.call(() => {
-      this.yt.seekTo(t, true);
-      setTimeout(() => this.emit("seeked"), 150);
-    });
+    this.command("seekTo", [t, true]);
+    setTimeout(() => this.emit("seeked"), 150);
   }
   doPlay() {
-    this.call(() => {
-      var _a, _b;
-      this.yt.playVideo();
-      if (!this.userMuted) this.yt.unMute();
-      if (!this.userVolume && ((_b = (_a = this.yt).getVolume) == null ? void 0 : _b.call(_a)) === 0) this.yt.setVolume(100);
-    });
+    this.command("playVideo");
+    if (!this.userMuted) this.command("unMute");
+    if (!this.userVolume && this.vol100 === 0) this.command("setVolume", [100]);
   }
   applyVolume(v) {
-    this.call(() => this.yt.setVolume(Math.round(v * 100)));
+    this.command("setVolume", [Math.round(v * 100)]);
   }
   doPause() {
-    this.call(() => this.yt.pauseVideo());
+    this.command("pauseVideo");
   }
   setMuted(m) {
-    this.call(() => m ? this.yt.mute() : this.yt.unMute());
+    this.command(m ? "mute" : "unMute");
   }
   destroy() {
-    var _a;
-    this.stopPolling();
-    try {
-      (_a = this.yt) == null ? void 0 : _a.destroy();
-    } catch {
-    }
+    clearInterval(this.hello);
     super.destroy();
   }
 };
-var VIMEO_API = "https://player.vimeo.com/api/player.js";
-var vimeoReady = null;
-function loadVimeoApi() {
-  var _a;
-  const w = window;
-  if ((_a = w.Vimeo) == null ? void 0 : _a.Player) return Promise.resolve(w.Vimeo.Player);
-  vimeoReady != null ? vimeoReady : vimeoReady = typeof w.define === "function" && w.define.amd && typeof w.require === "function" ? new Promise((resolve, reject) => w.require([VIMEO_API], (Player) => {
-    var _a2;
-    return resolve(Player != null ? Player : (_a2 = w.Vimeo) == null ? void 0 : _a2.Player);
-  }, reject)) : loadScript(VIMEO_API).then(() => w.Vimeo.Player);
-  return vimeoReady;
-}
-var VimeoMedia = class extends EmbedMedia {
+var VIMEO_ORIGIN = "https://player.vimeo.com";
+var VIMEO_EVENTS = ["play", "pause", "ended", "timeupdate", "seeked", "bufferstart", "bufferend", "volumechange"];
+var VimeoMedia = class extends FrameMedia {
   constructor(videoId, hash) {
-    super();
+    const q = new URLSearchParams({
+      ...hash ? { h: hash } : {},
+      api: "1",
+      controls: "0",
+      dnt: "1",
+      playsinline: "1",
+      title: "0",
+      byline: "0",
+      portrait: "0"
+    });
+    super(VIMEO_ORIGIN, `${VIMEO_ORIGIN}/video/${encodeURIComponent(videoId)}?${q}`);
     this.videoId = videoId;
     this.hash = hash;
     __publicField(this, "kind", "vimeo");
-    __publicField(this, "vp", null);
     __publicField(this, "pending", []);
-    loadVimeoApi().then((VimeoPlayer) => {
-      const opts = { controls: false, dnt: true, playsinline: true, title: false, byline: false, portrait: false };
-      if (hash) opts.url = `https://vimeo.com/${videoId}/${hash}`;
-      else opts.id = Number(videoId);
-      this.vp = new VimeoPlayer(this.target, opts);
-      this.vp.on("loaded", () => {
-        this.vp.getDuration().then((d) => {
-          this.setDuration(d);
-          this.markReady();
-          for (const fn of this.pending.splice(0)) fn();
-        });
-      });
-      this.vp.on("play", (d) => {
-        var _a;
-        this.report((_a = d == null ? void 0 : d.seconds) != null ? _a : this.currentTime);
+    __publicField(this, "gotReady", false);
+  }
+  send(method, value) {
+    this.post(value === void 0 ? { method } : { method, value }, false);
+  }
+  call(method, value) {
+    const go = () => this.send(method, value);
+    if (this.ready) go();
+    else this.pending.push(go);
+  }
+  receive(d) {
+    var _a;
+    if (d.event === "ready" && !this.gotReady) {
+      this.gotReady = true;
+      for (const ev of VIMEO_EVENTS) this.send("addEventListener", ev);
+      this.send("getDuration");
+      this.send("getVolume");
+      this.send("getMuted");
+      return;
+    }
+    if (d.method === "getDuration" && typeof d.value === "number") {
+      this.setDuration(d.value);
+      if (!this.ready) {
+        this.markReady();
+        for (const fn of this.pending.splice(0)) fn();
+      }
+    } else if (d.method === "getVolume" && typeof d.value === "number") {
+      this.syncVolume(d.value);
+    } else if (d.method === "getMuted" && typeof d.value === "boolean") {
+      this.syncMuted(d.value);
+    }
+    const data = (_a = d.data) != null ? _a : {};
+    switch (d.event) {
+      case "play":
+        if (typeof data.seconds === "number") this.report(data.seconds);
         this.setPlaying(true);
-      });
-      this.vp.on("pause", (d) => {
-        var _a;
-        this.report((_a = d == null ? void 0 : d.seconds) != null ? _a : this.currentTime);
+        break;
+      case "pause":
+        if (typeof data.seconds === "number") this.report(data.seconds);
         this.setPlaying(false);
-      });
-      this.vp.on("ended", () => {
+        break;
+      case "ended":
         this.setPlaying(false);
         this.emit("ended");
-      });
-      this.vp.on("timeupdate", (d) => {
-        this.report(d.seconds);
-        this.setDuration(d.duration);
+        break;
+      case "timeupdate":
+        if (typeof data.seconds === "number") this.report(data.seconds);
+        if (typeof data.duration === "number") this.setDuration(data.duration);
         this.emit("timeupdate");
-      });
-      this.vp.on("seeked", (d) => {
-        this.report(d.seconds);
+        break;
+      case "seeked":
+        if (typeof data.seconds === "number") this.report(data.seconds);
         this.emit("seeked");
-      });
-      this.vp.on("bufferstart", () => this.setStalled(true));
-      this.vp.on("bufferend", () => this.setStalled(false));
-    }).catch(() => this.emit("error"));
-  }
-  call(fn) {
-    if (this.ready) fn();
-    else this.pending.push(fn);
+        break;
+      case "bufferstart":
+        this.setStalled(true);
+        break;
+      case "bufferend":
+        this.setStalled(false);
+        break;
+      case "volumechange":
+        if (typeof data.volume === "number") this.syncVolume(data.volume);
+        if (typeof data.muted === "boolean") this.syncMuted(data.muted);
+        break;
+    }
   }
   seekTo(t) {
-    this.call(() => this.vp.setCurrentTime(t).catch(() => {
-    }));
+    this.call("setCurrentTime", t);
   }
   doPlay() {
-    this.call(() => {
-      var _a, _b, _c, _d;
-      this.vp.play().catch(() => {
-      });
-      if (!this.userMuted) this.vp.setMuted(false).catch(() => {
-      });
-      Promise.resolve((_b = (_a = this.vp).getMuted) == null ? void 0 : _b.call(_a)).then((m) => m !== void 0 && this.syncMuted(!!m)).catch(() => {
-      });
-      Promise.resolve((_d = (_c = this.vp).getVolume) == null ? void 0 : _d.call(_c)).then((v) => {
-        if (v === void 0) return;
-        if (!this.userVolume && v === 0) return this.vp.setVolume(1).then(() => this.syncVolume(1));
-        this.syncVolume(v);
-      }).catch(() => {
-      });
-    });
+    this.call("play");
+    if (!this.userMuted) this.call("setMuted", false);
+    if (!this.userVolume && this.volume === 0) this.call("setVolume", 1);
   }
   applyVolume(v) {
-    this.call(() => this.vp.setVolume(v).catch(() => {
-    }));
+    this.call("setVolume", v);
   }
   doPause() {
-    this.call(() => this.vp.pause().catch(() => {
-    }));
+    this.call("pause");
   }
   setMuted(m) {
-    this.call(() => this.vp.setMuted(m).catch(() => {
-    }));
-  }
-  destroy() {
-    var _a;
-    (_a = this.vp) == null ? void 0 : _a.destroy().catch(() => {
-    });
-    super.destroy();
+    this.call("setMuted", m);
   }
 };
 var panoptoCount = 0;
-var PanoptoMedia = class extends EmbedMedia {
+var PanoptoMedia = class extends FrameMedia {
   constructor(server, sessionId) {
-    super();
+    const embedId = `tb-panopto-${++panoptoCount}`;
+    const q = new URLSearchParams({
+      id: sessionId,
+      remoteEmbed: "true",
+      remoteHost: location.origin,
+      embedApiId: embedId,
+      // Keep Panopto's own UI out of the way: ToyBox draws the controls.
+      interactivity: "none",
+      showtitle: "false",
+      showbrand: "false",
+      offerviewer: "false",
+      autoplay: "false"
+    });
+    super(`https://${server}`, `https://${server}/Panopto/Pages/Embed.aspx?${q}`);
     this.server = server;
     this.sessionId = sessionId;
     __publicField(this, "kind", "panopto");
-    __publicField(this, "api", null);
-    __publicField(this, "poll", 0);
-    __publicField(this, "lastReported", -1);
+    __publicField(this, "embedId");
     __publicField(this, "iframeReady", false);
     __publicField(this, "loaded", false);
     __publicField(this, "beforeIframe", []);
     __publicField(this, "afterLoad", []);
     __publicField(this, "pendingSeek", null);
-    this.target.id = `tb-panopto-${++panoptoCount}`;
-    loadScript("https://developers.panopto.com/scripts/embedapi.min.js").then(() => {
-      const EmbedApi = window.EmbedApi;
-      this.api = new EmbedApi(this.target.id, {
-        width: "100%",
-        height: "100%",
-        serverName: server,
-        sessionId,
-        videoParams: {
-          // Keep Panopto's own UI out of the way: ToyBox draws the controls.
-          interactivity: "none",
-          showtitle: "false",
-          showbrand: "false",
-          offerviewer: "false",
-          autoplay: "false"
-        },
-        events: {
-          onIframeReady: () => {
-            this.iframeReady = true;
-            for (const fn of this.beforeIframe.splice(0)) fn();
-          },
-          onReady: () => this.onLoaded(),
-          onStateChange: (state) => this.onState(state),
-          onLoginShown: () => this.emit("login"),
-          onError: () => this.emit("error")
-        }
-      });
-    }).catch(() => this.emit("error"));
+    __publicField(this, "lastReported", -1);
+    __publicField(this, "remote", { volume: 1, isMuted: false, isPaused: true, isFinished: false });
+    this.embedId = embedId;
+  }
+  send(msg, data = "") {
+    this.post({ msg, source: "PanoptoEmbed", id: this.embedId, data });
   }
   /** Runs once the iframe can take commands. */
   whenIframe(fn) {
@@ -627,52 +619,57 @@ var PanoptoMedia = class extends EmbedMedia {
     if (this.ready) fn();
     else this.afterLoad.push(fn);
   }
+  receive(d) {
+    var _a;
+    if (d.source !== "PanoptoEmbed" || d.id !== this.embedId && d.id !== "*") return;
+    switch (d.msg) {
+      case "embedIframeReady":
+        this.iframeReady = true;
+        for (const fn of this.beforeIframe.splice(0)) fn();
+        break;
+      case "iframeError":
+        this.emit("error");
+        break;
+      case "iframeLoginShown":
+        this.emit("login");
+        break;
+      case "iframeState":
+        this.onIframeState((_a = d.data) != null ? _a : {});
+        break;
+    }
+  }
+  onIframeState(p) {
+    this.remote = { volume: p.volume, isMuted: p.isMuted, isPaused: p.isPaused, isFinished: p.isFinished };
+    if (typeof p.duration === "number") this.setDuration(p.duration);
+    if (typeof p.isMuted === "boolean") this.syncMuted(p.isMuted);
+    if (typeof p.volume === "number") this.syncVolume(p.volume);
+    if (typeof p.currentTime === "number" && p.currentTime !== this.lastReported) {
+      this.lastReported = p.currentTime;
+      this.report(p.currentTime);
+    }
+    if (p.trigger !== "iframeStateUpdate") {
+      if (!p.isPaused) this.emit("timeupdate");
+      return;
+    }
+    if (!this.ready) this.onLoaded();
+    if (p.isFinished) {
+      this.setPlaying(false);
+      this.emit("ended");
+    } else {
+      this.setPlaying(!p.isPaused);
+    }
+  }
   onLoaded() {
-    this.setDuration(this.api.getDuration());
     this.markReady();
     if (this.pendingSeek !== null) {
-      this.api.seekTo(this.pendingSeek);
+      this.send("iframeSeek", this.pendingSeek);
       this.lastReported = -1;
       this.pendingSeek = null;
     }
-    if (this.userMuted) this.api.muteVideo();
-    else this.api.unmuteVideo();
-    if (this.userVolume) this.api.setVolume(this.volume);
-    else if (this.api.getVolume() === 0) this.api.setVolume(1);
+    this.send(this.userMuted ? "iframeMute" : "iframeUnmute");
+    if (this.userVolume) this.send("iframeVolume", this.volume);
+    else if (this.remote.volume === 0) this.send("iframeVolume", 1);
     for (const fn of this.afterLoad.splice(0)) fn();
-    this.sync();
-  }
-  /** Take Panopto's time only when it has actually changed. */
-  sync() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
-    if (!this.ready) return;
-    const t = (_b = (_a = this.api) == null ? void 0 : _a.getCurrentTime) == null ? void 0 : _b.call(_a);
-    if (typeof t === "number" && t !== this.lastReported) {
-      this.lastReported = t;
-      this.report(t);
-    }
-    this.setDuration((_e = (_d = (_c = this.api) == null ? void 0 : _c.getDuration) == null ? void 0 : _d.call(_c)) != null ? _e : NaN);
-    const m = (_g = (_f = this.api) == null ? void 0 : _f.isMuted) == null ? void 0 : _g.call(_f);
-    if (typeof m === "boolean") this.syncMuted(m);
-    const v = (_i = (_h = this.api) == null ? void 0 : _h.getVolume) == null ? void 0 : _i.call(_h);
-    if (typeof v === "number") this.syncVolume(v);
-  }
-  onState(state) {
-    this.sync();
-    if (state === 1) {
-      this.setPlaying(true);
-      if (!this.poll) {
-        this.poll = window.setInterval(() => {
-          this.sync();
-          this.emit("timeupdate");
-        }, 250);
-      }
-    } else {
-      this.setPlaying(false);
-      clearInterval(this.poll);
-      this.poll = 0;
-      if (state === 0) this.emit("ended");
-    }
   }
   seekTo(t) {
     if (!this.ready) {
@@ -680,7 +677,7 @@ var PanoptoMedia = class extends EmbedMedia {
       setTimeout(() => this.emit("seeked"), 0);
       return;
     }
-    this.api.seekTo(t);
+    this.send("iframeSeek", t);
     this.lastReported = -1;
     setTimeout(() => this.emit("seeked"), 200);
   }
@@ -688,25 +685,21 @@ var PanoptoMedia = class extends EmbedMedia {
     this.whenIframe(() => {
       if (!this.loaded) {
         this.loaded = true;
-        this.api.loadVideo();
+        this.send("iframeLoad");
         return;
       }
-      this.api.playVideo();
-      if (!this.userMuted) this.api.unmuteVideo();
+      this.send("iframePlay");
+      if (!this.userMuted) this.send("iframeUnmute");
     });
   }
   doPause() {
-    if (this.loaded) this.whenLoaded(() => this.api.pauseVideo());
+    if (this.loaded) this.whenLoaded(() => this.send("iframePause"));
   }
   setMuted(m) {
-    this.whenLoaded(() => m ? this.api.muteVideo() : this.api.unmuteVideo());
+    this.whenLoaded(() => this.send(m ? "iframeMute" : "iframeUnmute"));
   }
   applyVolume(v) {
-    this.whenLoaded(() => this.api.setVolume(v));
-  }
-  destroy() {
-    clearInterval(this.poll);
-    super.destroy();
+    this.whenLoaded(() => this.send("iframeVolume", v));
   }
 };
 
@@ -1199,7 +1192,7 @@ var ToyBoxPlayer = class {
     if (cue.pause && this.media && !this.media.paused) this.media.pause();
   }
   onToyMessage(msg, cue) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     switch (msg.type) {
       case "pause":
         this.pause();
@@ -1217,6 +1210,16 @@ var ToyBoxPlayer = class {
       case "log":
         (_f = (_e = this.opts).onLog) == null ? void 0 : _f.call(_e, cue, msg.data);
         break;
+      case "navigated": {
+        const toy = this.active.get(cue.id);
+        if (toy) {
+          const note = blockedNotice();
+          Object.assign(note.style, { left: toy.el.style.left, top: toy.el.style.top, width: toy.el.style.width, height: toy.el.style.height });
+          toy.el.replaceWith(note);
+        }
+        (_h = (_g = this.opts).onBlocked) == null ? void 0 : _h.call(_g, cue);
+        break;
+      }
     }
   }
   wireControls(fsBtn) {
@@ -1293,6 +1296,13 @@ var ToyBoxPlayer = class {
 var svg = (path) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${path}</svg>`;
 var ICON_SOUND = svg('<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>');
 var ICON_MUTED = svg('<path d="M17 9l5 6M22 9l-5 6"/>');
+function blockedNotice() {
+  const n = document.createElement("div");
+  n.className = "tb-blocked";
+  n.setAttribute("role", "alert");
+  n.textContent = "This toy tried to open another web page, so ToyBox stopped it.";
+  return n;
+}
 var EMPTY_MEDIA = {
   kind: "file",
   el: document.createElement("div"),
@@ -1348,10 +1358,14 @@ var StandaloneToy = class {
       lockdown: this.opts.lockdown,
       theme: this.opts.theme,
       emit: (msg) => {
-        var _a3, _b2, _c, _d;
+        var _a3, _b2, _c, _d, _e, _f;
         if (msg.type === "complete") (_b2 = (_a3 = this.opts).onComplete) == null ? void 0 : _b2.call(_a3, { cueId: spec.id, label: spec.label, at: 0, result: msg.result });
         else if (msg.type === "log") (_d = (_c = this.opts).onLog) == null ? void 0 : _d.call(_c, spec, msg.data);
         else if (msg.type === "resize" && aspect === "auto") frame.el.style.height = `${Math.ceil(msg.height)}px`;
+        else if (msg.type === "navigated") {
+          frame.el.replaceWith(blockedNotice());
+          (_f = (_e = this.opts).onBlocked) == null ? void 0 : _f.call(_e, spec);
+        }
       }
     });
     if (aspect === "auto") frame.el.style.height = "320px";
@@ -1404,6 +1418,14 @@ function lintToy(html, ctx = {}) {
     add("error", "Browser storage (localStorage, cookies\u2026) isn\u2019t available to toys and will throw an error.");
   if (/\b(window\.top|parent\.document|top\.location|window\.open)\b/.test(code))
     add("error", "Toys can\u2019t reach the page around them or open windows.");
+  if (/\b(location\s*\.\s*(href|assign|replace)|(window|document|self|top|parent)\s*\.\s*location\b|location\s*=)/.test(code) || /http-equiv\s*=\s*["']?refresh/i.test(code))
+    add("error", "It tries to go to another web page (location / refresh). Toys must stay on their own page; ToyBox stops any toy that navigates away.");
+  if (/<a\b[^>]*\bhref\s*=\s*["']?(https?:)?\/\//i.test(code))
+    add("warning", "It links to another website. Clicking a link would take the toy away from its page, and ToyBox would stop it. Put links in the course page instead.");
+  if (/type\s*=\s*["']?password/i.test(code) || /\b(password|passcode|log\s*in|sign\s*in|username)\b/i.test(code.replace(/<script[\s\S]*?<\/script>/gi, "")))
+    add("error", "It mentions passwords or signing in. Toys must never ask learners for passwords or personal details.");
+  if (/\b(RTCPeerConnection|RTCDataChannel|webkitRTCPeerConnection)\b/.test(code))
+    add("error", "It uses WebRTC (peer-to-peer connections). Toys must not connect to anything outside the page.");
   if (/<form\b/i.test(code) && /\baction\s*=/i.test(code))
     add("warning", "Forms can\u2019t be submitted. Handle button clicks in JavaScript instead.");
   if (ctx.mode === "toy" && ctx.autoHeight && /100vh/.test(code))
@@ -1594,12 +1616,14 @@ async function mountEditor(root, cfg, host) {
   let current = 0;
   let aspect = cfg.aspect;
   let dirty = false;
+  const locked = !!cfg.codeLocked;
+  const historyCache = /* @__PURE__ */ new Map();
   const blankToy = () => {
     var _a2, _b;
     return {
       id: newId(),
       label: isVideo ? `${S.toy} ${toys.length + 1}` : S.toy,
-      html: STARTER,
+      html: locked ? "" : STARTER,
       params: { ...EXAMPLES[0].params },
       start: Math.floor((_a2 = player == null ? void 0 : player.video.currentTime) != null ? _a2 : 0),
       end: Math.floor((_b = player == null ? void 0 : player.video.currentTime) != null ? _b : 0) + 2,
@@ -1747,7 +1771,8 @@ async function mountEditor(root, cfg, host) {
       id: "mod-toybox-html",
       spellcheck: "false",
       wrap: "off",
-      rows: 18
+      rows: 18,
+      readonly: locked
     });
     html.value = (_a2 = t.html) != null ? _a2 : "";
     let lintTimer = 0;
@@ -1779,7 +1804,9 @@ async function mountEditor(root, cfg, host) {
     };
     const examples = el("select.custom-select.form-select", { "aria-label": S.startfrom });
     examples.append(el("option", { value: "", text: S.startfrom + "\u2026" }));
-    for (const ex of EXAMPLES) examples.append(el("option", { value: ex.file, text: ex.name }));
+    for (const ex of EXAMPLES) {
+      if (!(locked && ex.file === "starter")) examples.append(el("option", { value: ex.file, text: ex.name }));
+    }
     examples.onchange = async () => {
       var _a3;
       const ex = EXAMPLES.find((e) => e.file === examples.value);
@@ -1801,6 +1828,34 @@ async function mountEditor(root, cfg, host) {
       renderFields();
       preview();
     };
+    let historySel = null;
+    if (host.history && host.loadVersion && /^\d+$/.test(t.id)) {
+      const sel = historySel = el("select.custom-select.form-select", { "aria-label": S.history });
+      sel.append(el("option", { value: "", text: S.history + "\u2026" }));
+      if (!historyCache.has(t.id)) historyCache.set(t.id, host.history(t.id).catch(() => []));
+      historyCache.get(t.id).then((versions) => {
+        if (!versions.length) sel.append(el("option", { value: "", disabled: true, text: S.historyempty }));
+        for (const v of versions) {
+          sel.append(el("option", { value: String(v.id), text: `${v.timestr}${v.who ? " \xB7 " + v.who : ""} \xB7 ${v.hash}` }));
+        }
+      });
+      sel.onchange = async () => {
+        const vid = Number(sel.value);
+        if (!vid) return;
+        if (!window.confirm(S.restoreversionconfirm)) {
+          sel.value = "";
+          return;
+        }
+        try {
+          t.html = await host.loadVersion(t.id, vid);
+          markDirty();
+          renderFields();
+          preview();
+        } catch (e) {
+          host.error(e);
+        }
+      };
+    }
     const aiBtn = el("button.btn.btn-outline-primary", { type: "button", text: "\u2728 " + S.copyaiprompt, title: S.copyaiprompt_help });
     aiBtn.onclick = async () => {
       var _a3, _b2;
@@ -1908,9 +1963,8 @@ async function mountEditor(root, cfg, host) {
       el(
         "div.mod-toybox-row.mod-toybox-ai",
         {},
-        el("strong", { text: S.makewithai }),
-        aiBtn,
-        el("button.btn.btn-outline-secondary", {
+        ...locked ? [el("div.alert.alert-info.small.w-100.mb-0", { text: S.codelocked })] : [el("strong", { text: S.makewithai }), aiBtn],
+        locked ? null : el("button.btn.btn-outline-secondary", {
           type: "button",
           text: S.downloadguide,
           title: S.downloadguide_help,
@@ -1922,7 +1976,8 @@ async function mountEditor(root, cfg, host) {
             setTimeout(() => a.remove(), 1e3);
           }
         }),
-        examples
+        examples,
+        historySel
       ),
       el("div.mod-toybox-field", {}, el("label", { for: "mod-toybox-html", text: S.toycode }), html),
       el("div.mod-toybox-field", {}, el("label", { for: "mod-toybox-params", text: S.toyparams }), params, paramsErr),
@@ -1953,12 +2008,14 @@ async function mountEditor(root, cfg, host) {
     host.save(toys, aspect).then((saved) => {
       const keepIndex = current;
       toys = fromServer(saved);
+      historyCache.clear();
       if (!toys.length) toys.push(blankToy());
       current = Math.min(keepIndex, toys.length - 1);
       dirty = false;
       status.textContent = S.allsaved;
       status.classList.remove("unsaved");
       renderTabs();
+      renderFields();
       host.notify(S.saved, "success");
     }).catch(host.error).finally(() => saveBtn.disabled = false);
   };
@@ -1993,11 +2050,18 @@ var init = async (selector) => {
         Ajax.call([{ methodname: "mod_toybox_save_toys", args: { cmid: cfg.cmid, aspect, toys: JSON.stringify(payload) } }])[0]
       ).then((r) => JSON.parse(r.toys));
     },
+    history: (toyId) => historyCall(cfg.cmid, toyId, 0).then((r) => r.versions),
+    loadVersion: (toyId, versionId) => historyCall(cfg.cmid, toyId, versionId).then((r) => r.html),
     notify: (message, type = "info") => addToast(message, { type }),
     alert: (title, message) => Notification.alert(title, message),
     error: (e) => Notification.exception(e)
   });
 };
+function historyCall(cmid, toyId, versionid) {
+  return Promise.resolve(
+    Ajax.call([{ methodname: "mod_toybox_get_toy_history", args: { cmid, toyid: Number(toyId), versionid } }])[0]
+  );
+}
 export {
   init
 };

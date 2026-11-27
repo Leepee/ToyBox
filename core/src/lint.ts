@@ -53,6 +53,14 @@ export function lintToy(html: string, ctx: LintContext = {}): LintIssue[] {
     add('error', 'Browser storage (localStorage, cookies…) isn’t available to toys and will throw an error.');
   if (/\b(window\.top|parent\.document|top\.location|window\.open)\b/.test(code))
     add('error', 'Toys can’t reach the page around them or open windows.');
+  if (/\b(location\s*\.\s*(href|assign|replace)|(window|document|self|top|parent)\s*\.\s*location\b|location\s*=)/.test(code) || /http-equiv\s*=\s*["']?refresh/i.test(code))
+    add('error', 'It tries to go to another web page (location / refresh). Toys must stay on their own page; ToyBox stops any toy that navigates away.');
+  if (/<a\b[^>]*\bhref\s*=\s*["']?(https?:)?\/\//i.test(code))
+    add('warning', 'It links to another website. Clicking a link would take the toy away from its page, and ToyBox would stop it. Put links in the course page instead.');
+  if (/type\s*=\s*["']?password/i.test(code) || /\b(password|passcode|log\s*in|sign\s*in|username)\b/i.test(code.replace(/<script[\s\S]*?<\/script>/gi, '')))
+    add('error', 'It mentions passwords or signing in. Toys must never ask learners for passwords or personal details.');
+  if (/\b(RTCPeerConnection|RTCDataChannel|webkitRTCPeerConnection)\b/.test(code))
+    add('error', 'It uses WebRTC (peer-to-peer connections). Toys must not connect to anything outside the page.');
   if (/<form\b/i.test(code) && /\baction\s*=/i.test(code))
     add('warning', 'Forms can’t be submitted. Handle button clicks in JavaScript instead.');
 

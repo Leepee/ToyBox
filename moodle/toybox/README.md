@@ -40,9 +40,11 @@ Teachers write toys in HTML, or get an AI to write them: the toy editor's **Copy
 
 ## YouTube, Vimeo and Panopto
 
-- **YouTube** plays from `youtube-nocookie.com` (privacy-enhanced mode), with YouTube's own controls hidden. ToyBox's controls drive it through YouTube's IFrame Player API.
-- **Vimeo** plays with *do not track* on, through Vimeo's Player API. Vimeo only hides its own controls for videos on paid Vimeo plans; otherwise both sets show.
-- **Panopto** plays through Panopto's Embed API with its own interface turned down. Viewers need access to the session in Panopto, for example through your Moodle sign-in, and Panopto may still show its settings/captions buttons.
+- **YouTube** plays from `youtube-nocookie.com` (privacy-enhanced mode), with YouTube's own controls hidden.
+- **Vimeo** plays with *do not track* on. Vimeo only hides its own controls for videos on paid Vimeo plans; otherwise both sets show.
+- **Panopto** plays with its own interface turned down. Viewers need access to the session in Panopto, for example through your Moodle sign-in, and Panopto may still show its settings/captions buttons.
+- ToyBox's controls talk to each player frame with the same messages the sites' own API scripts use, so **no YouTube, Vimeo or Panopto script runs in the Moodle page**. Their code stays in their own cross-origin frames, and ToyBox only accepts messages from the right frame and site.
+- Video links must be `https://`. Administrators can limit them to a list of websites (see *Safety and limits* below).
 - Toys appear within a fraction of a second of their time; uploaded video files are frame-accurate.
 - Learners' browsers need to reach `youtube.com`/`youtube-nocookie.com`, `vimeo.com` or your Panopto server, as for any embedded video.
 
@@ -60,10 +62,34 @@ The same look is described to AI assistants by **Copy AI prompt** and **Download
 
 Toys are code written by teachers or AI, so they never run in the Moodle page itself:
 
-- Each toy runs in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`. It can't read or change the Moodle page, cookies or session, or open windows or pop-ups.
-- A Content-Security-Policy is added to every toy: no network at all (`fetch`, external scripts and images, forms). Learner input can't be sent anywhere.
-- The only thing a toy can do outside itself is send a few validated messages: pause, play, seek, finished (with a small JSON result, max 8 KB) and resize.
+- Each toy is served on its own by `toy.php` and runs in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`. It can't read or change the Moodle page, cookies or session, or open windows or pop-ups. Pages with toys on them don't contain the toys' code.
+- `toy.php` sends a Content-Security-Policy **header**: no network at all (`fetch`, external scripts and images, forms, WebSockets). Because it's a header, nothing in the toy can switch it off. Learner input can't be sent anywhere.
+- One thing browsers can't block is a frame navigating itself. If a toy tries, ToyBox stops it at once, shows a notice in its place and logs a *Toy stopped for opening another web page* event. The checker in the editor also flags code that navigates, links out, asks for passwords or uses WebRTC.
+- The only thing a toy can do outside itself is send a few validated messages: pause, play, seek, finished (with a small JSON result, max 8 KB) and resize. Repeat results within 5 seconds are ignored.
 - Creating and editing toys needs `mod/toybox:edittoys`, which is flagged as an XSS risk like other code-authoring capabilities.
+- Every change of a toy's code is kept (the last 20 versions per toy), with who made it and when. Teachers can bring back an earlier version from **Earlier versions** in the editor. Saving toys is logged with a fingerprint of all of their code.
+- **Restored activities:** toys restored from a backup stay visible, and teachers see a notice asking them to check them. Toys restored from **another Moodle site** are held back from learners until a teacher marks them as reviewed (or saves them). Duplicating and importing within the site need neither.
+- Completion is for tracking engagement, not assessment: a learner who knows how could report a toy as finished without doing it. Use a quiz for anything that counts.
+
+### Safety and limits (site settings)
+
+*Site administration → Plugins → Activity modules → ToyBox*:
+
+| Setting | Default | What it does |
+|---|---|---|
+| Only allow the toys that come with ToyBox | Off | Teachers can only choose the bundled example toys; code can't be typed, pasted or made with AI. Existing toys keep working. |
+| Most toys in one activity | 50 | |
+| Largest toy (KB) | 1024 | At most 4096. |
+| Largest video upload | Site limit | Also limited by course and site upload limits. Uploads must be MP4, WebM or M4V. |
+| Allowed video websites | Any | One per line (subdomains included), e.g. `youtube.com`, `vimeo.com`, `yourschool.cloud.panopto.eu`. Links must be `https://`. |
+
+### Deploying
+
+- **Content-Security-Policy on your site:** if your Moodle sends its own CSP, allow `frame-src` for `https://www.youtube-nocookie.com https://player.vimeo.com https://<your Panopto server>` (only those you use). ToyBox needs no third-party `script-src`.
+- **Big video files:** uploaded videos are served by `pluginfile.php`, which supports seeking. On busy sites, turn on `$CFG->xsendfile` so the web server sends the files rather than PHP.
+- **Embedding on other sites** (the *Embed* page's code) needs *Allow frame embedding* on. Leave it off if you only use ToyBox inside Moodle.
+- **Who can write code:** `mod/toybox:edittoys` lets someone run their own code in front of learners (sandboxed). Give it to roles you'd trust to edit HTML labels; or turn on *Only allow the toys that come with ToyBox*.
+- Report security problems privately: see `SECURITY.md` in the ToyBox repository.
 
 ## Capabilities
 
@@ -73,7 +99,7 @@ Toys are code written by teachers or AI, so they never run in the Moodle page it
 | `mod/toybox:view` | Everyone with course access |
 | `mod/toybox:edittoys` | Editing teacher, Manager |
 | `mod/toybox:submit` (saves results and counts for completion) | Student |
-| `mod/toybox:viewresults` | Teacher, Editing teacher, Manager |
+| `mod/toybox:viewresults` | Teacher, Editing teacher, Manager (with separate groups, only their groups unless they can access all groups) |
 
 ## Not yet
 

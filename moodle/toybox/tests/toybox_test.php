@@ -121,9 +121,12 @@ final class toybox_test extends \advanced_testcase {
         $r = record_result::execute($toybox->cmid, $b->id, '{"correct":false}');
         $this->assertTrue($r['activitycomplete']);
 
-        // Finishing again counts attempts.
-        record_result::execute($toybox->cmid, $a->id, '{"correct":true}');
+        // Finishing again straight away is ignored as a repeat; later it counts as another attempt.
         global $DB;
+        record_result::execute($toybox->cmid, $a->id, '{"correct":true}');
+        $this->assertEquals(1, $DB->get_field('toybox_result', 'attempts', ['toyid' => $a->id, 'userid' => $student->id]));
+        $DB->set_field('toybox_result', 'timemodified', time() - 60, ['toyid' => $a->id]);
+        record_result::execute($toybox->cmid, $a->id, '{"correct":true}');
         $this->assertEquals(2, $DB->get_field('toybox_result', 'attempts', ['toyid' => $a->id, 'userid' => $student->id]));
     }
 

@@ -1,4 +1,5 @@
 import { ToyFrame } from './toyHost';
+import { blockedNotice } from './player';
 import type { Theme } from './theme';
 import type { Aspect, CompletionRecord, ToySpec } from './types';
 
@@ -11,6 +12,8 @@ export interface StandaloneOptions {
   theme?: Theme;
   onComplete?: (rec: CompletionRecord) => void;
   onLog?: (spec: ToySpec, data: unknown) => void;
+  /** The toy tried to navigate away and was stopped (hosts can log this). */
+  onBlocked?: (spec: ToySpec) => void;
 }
 
 const RATIOS: Record<Exclude<Aspect, 'auto'>, string> = {
@@ -53,6 +56,10 @@ export class StandaloneToy {
         if (msg.type === 'complete') this.opts.onComplete?.({ cueId: spec.id, label: spec.label, at: 0, result: msg.result });
         else if (msg.type === 'log') this.opts.onLog?.(spec, msg.data);
         else if (msg.type === 'resize' && aspect === 'auto') frame.el.style.height = `${Math.ceil(msg.height)}px`;
+        else if (msg.type === 'navigated') {
+          frame.el.replaceWith(blockedNotice());
+          this.opts.onBlocked?.(spec);
+        }
       },
     });
     if (aspect === 'auto') frame.el.style.height = '320px'; // until the toy reports its size

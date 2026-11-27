@@ -8,6 +8,8 @@ export interface PlayerOptions {
   sdkUrl?: string;
   onComplete?: (rec: CompletionRecord) => void;
   onLog?: (cue: Cue, data: unknown) => void;
+  /** A toy tried to navigate away and was stopped (hosts can log this). */
+  onBlocked?: (cue: Cue) => void;
   /** Lock inline toys down with a CSP (no network). Default true. */
   lockdown?: boolean;
   /** Theme for the player controls and the toys (see resolveThemeFonts). */
@@ -232,6 +234,16 @@ export class ToyBoxPlayer {
       case 'log':
         this.opts.onLog?.(cue, msg.data);
         break;
+      case 'navigated': {
+        const toy = this.active.get(cue.id);
+        if (toy) {
+          const note = blockedNotice();
+          Object.assign(note.style, { left: toy.el.style.left, top: toy.el.style.top, width: toy.el.style.width, height: toy.el.style.height });
+          toy.el.replaceWith(note);
+        }
+        this.opts.onBlocked?.(cue);
+        break;
+      }
     }
   }
 
@@ -314,6 +326,15 @@ export class ToyBoxPlayer {
 const svg = (path: string) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${path}</svg>`;
 const ICON_SOUND = svg('<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>');
 const ICON_MUTED = svg('<path d="M17 9l5 6M22 9l-5 6"/>');
+
+/** Shown where a toy was stopped for trying to open another web page. */
+export function blockedNotice(): HTMLElement {
+  const n = document.createElement('div');
+  n.className = 'tb-blocked';
+  n.setAttribute('role', 'alert');
+  n.textContent = 'This toy tried to open another web page, so ToyBox stopped it.';
+  return n;
+}
 
 /** Stand-in used before a lesson (and its video) is set. */
 const EMPTY_MEDIA: PlayerMedia = {

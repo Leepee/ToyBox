@@ -51,6 +51,17 @@ class restore_toybox_activity_structure_step extends restore_activity_structure_
         global $DB;
         $data = (object) $data;
         $data->course = $this->get_courseid();
+        // Restored toys stay visible, but teachers are asked to look them over. Toys from another
+        // Moodle site are held back from learners until a teacher has (duplicating and importing
+        // within this site need neither).
+        $task = $this->get_task();
+        if (!$task->is_samesite()) {
+            $data->restorereview = 2;
+        } else if (($task->get_info()->mode ?? null) != backup::MODE_IMPORT) {
+            $data->restorereview = 1;
+        } else {
+            $data->restorereview = 0;
+        }
         $newid = $DB->insert_record('toybox', $data);
         $this->apply_activity_instance($newid);
     }
@@ -65,8 +76,10 @@ class restore_toybox_activity_structure_step extends restore_activity_structure_
         $data = (object) $data;
         $oldid = $data->id;
         $data->toyboxid = $this->get_new_parentid('toybox');
-        $newid = $DB->insert_record('toybox_toy', $data);
-        $this->set_mapping('toybox_toy', $oldid, $newid);
+        $data->usermodified = $this->task->get_userid();
+        $data->id = $DB->insert_record('toybox_toy', $data);
+        $this->set_mapping('toybox_toy', $oldid, $data->id);
+        \mod_toybox\local\toys::add_history($data);
     }
 
     /**

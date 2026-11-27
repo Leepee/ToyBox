@@ -122,8 +122,11 @@ class mod_toybox_mod_form extends moodleform_mod {
             $url = trim($data['videourl'] ?? '');
             if ($url === '') {
                 $errors['videourl'] = get_string('required');
-            } else if (!preg_match('#^https?://#i', $url)) {
-                $errors['videourl'] = get_string('error_badurl', 'toybox');
+            } else if (!\mod_toybox\local\toys::video_url_allowed($url)) {
+                $errors['videourl'] = get_string(
+                    trim((string) get_config('mod_toybox', 'videohosts')) === '' ? 'error_badurl' : 'error_videohost',
+                    'toybox'
+                );
             } else if (\mod_toybox\local\toys::video_provider($url) && !\mod_toybox\local\toys::video_id($url)) {
                 $errors['videourl'] = get_string('error_videoid', 'toybox');
             }
