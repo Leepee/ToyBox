@@ -158,6 +158,8 @@ abstract class EmbedMedia implements PlayerMedia {
   protected dur = NaN;
   protected ready = false;
   private isMuted = false;
+  /** True once the viewer muted it themselves (so playback doesn't unmute it again). */
+  protected userMuted = false;
 
   constructor() {
     this.el = document.createElement('div');
@@ -188,7 +190,8 @@ abstract class EmbedMedia implements PlayerMedia {
     return this.isMuted;
   }
   set muted(m: boolean) {
-    this.isMuted = m;
+    this.userMuted = m;
+    this.syncMuted(m);
     this.setMuted(m);
   }
   play() {
@@ -218,6 +221,12 @@ abstract class EmbedMedia implements PlayerMedia {
   }
 
   // ---- for subclasses
+  /** The provider told us whether it's muted (e.g. a browser forced muted playback). */
+  protected syncMuted(m: boolean) {
+    if (m === this.isMuted) return;
+    this.isMuted = m;
+    this.emit('volumechange');
+  }
   protected emit(type: string) {
     this.events.dispatchEvent(new Event(type));
   }
@@ -354,6 +363,7 @@ export class YouTubeMedia extends EmbedMedia {
     this.poll = window.setInterval(() => {
       if (!this.yt?.getCurrentTime) return;
       this.report(this.yt.getCurrentTime());
+      if (this.yt.isMuted) this.syncMuted(this.yt.isMuted());
       this.emit('timeupdate');
     }, 250);
   }
@@ -370,7 +380,10 @@ export class YouTubeMedia extends EmbedMedia {
     });
   }
   protected doPlay() {
-    this.call(() => this.yt.playVideo());
+    this.call(() => {
+      this.yt.playVideo();
+      if (!this.userMuted) this.yt.unMute();
+    });
   }
   protected doPause() {
     this.call(() => this.yt.pauseVideo());
@@ -468,7 +481,11 @@ export class VimeoMedia extends EmbedMedia {
     this.call(() => this.vp.setCurrentTime(t).catch(() => {}));
   }
   protected doPlay() {
-    this.call(() => this.vp.play().catch(() => {}));
+    this.call(() => {
+      this.vp.play().catch(() => {});
+      if (!this.userMuted) this.vp.setMuted(false).catch(() => {});
+      this.vp.getMuted?.().then((m: boolean) => this.syncMuted(!!m)).catch(() => {});
+    });
   }
   protected doPause() {
     this.call(() => this.vp.pause().catch(() => {}));
@@ -550,6 +567,8 @@ export class PanoptoMedia extends EmbedMedia {
       this.report(t);
     }
     this.setDuration(this.api?.getDuration?.() ?? NaN);
+    const m = this.api?.isMuted?.();
+    if (typeof m === 'boolean') this.syncMuted(m);
   }
 
   private onState(state: number) {
@@ -579,7 +598,12 @@ export class PanoptoMedia extends EmbedMedia {
     });
   }
   protected doPlay() {
-    this.call(() => this.api.playVideo());
+    this.call(() => {
+      this.api.playVideo();
+      // Playback started without a click (e.g. a preview) can leave Panopto muted;
+      // unmute unless the viewer chose mute. Needs a click to be allowed by browsers.
+      if (!this.userMuted) this.api.unmuteVideo();
+    });
   }
   protected doPause() {
     this.call(() => this.api.pauseVideo());

@@ -17,6 +17,8 @@
 .tb-controls { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--tb-band, #0b0f17); color: var(--tb-on-band, #e5e7eb); }
 .tb-controls button { background: none; border: 0; color: inherit; font-size: 16px; cursor: pointer; width: 32px; height: 32px; border-radius: 6px; }
 .tb-controls button:hover { background: #ffffff1a; }
+.tb-controls .tb-mute { display: grid; place-items: center; }
+.tb-controls .tb-mute.tb-muted { color: var(--tb-accent, #f59e0b); }
 .tb-time { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--tb-on-band, #9ca3af); opacity: .8; white-space: nowrap; }
 .tb-track { position: relative; flex: 1; height: 24px; display: flex; align-items: center; }
 .tb-scrub { width: 100%; margin: 0; accent-color: var(--tb-accent, #f59e0b); position: relative; z-index: 1; }

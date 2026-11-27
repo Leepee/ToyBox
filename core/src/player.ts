@@ -32,6 +32,8 @@ export class ToyBoxPlayer {
   private scrub: HTMLInputElement;
   private timeLabel: HTMLElement;
   private playBtn: HTMLButtonElement;
+  private muteBtn: HTMLButtonElement;
+  private shownMuted: boolean | null = null;
 
   private cues: Cue[] = [];
   private baseUrl = location.href;
@@ -54,6 +56,7 @@ export class ToyBoxPlayer {
             <input class="tb-scrub" type="range" min="0" max="1000" value="0" aria-label="Seek" />
           </div>
           <span class="tb-time">0:00 / 0:00</span>
+          <button class="tb-mute" aria-label="Mute"></button>
           <button class="tb-fs" aria-label="Fullscreen">⛶</button>
         </div>
       </div>`;
@@ -65,6 +68,7 @@ export class ToyBoxPlayer {
     this.markers = q('.tb-markers');
     this.scrub = q('.tb-scrub');
     this.timeLabel = q('.tb-time');
+    this.muteBtn = q('.tb-mute');
     this.playBtn = q('.tb-play');
 
     if (opts.theme) applyTheme(opts.theme, this.root);
@@ -139,7 +143,7 @@ export class ToyBoxPlayer {
     this.mediaSrc = src;
     this.root.dataset.media = media.kind;
     this.stage.insertBefore(media.el, this.shield);
-    for (const ev of ['seeked', 'pause', 'loadedmetadata', 'durationchange', 'timeupdate', 'ended']) media.addEventListener(ev, () => this.sync());
+    for (const ev of ['seeked', 'pause', 'loadedmetadata', 'durationchange', 'timeupdate', 'ended', 'volumechange']) media.addEventListener(ev, () => this.sync());
     media.addEventListener('loadedmetadata', () => this.renderMarkers());
     media.addEventListener('durationchange', () => this.renderMarkers());
     media.addEventListener('play', () => this.startLoop());
@@ -231,6 +235,11 @@ export class ToyBoxPlayer {
   private wireControls(fsBtn: HTMLButtonElement) {
     const toggle = () => (this.video.paused ? this.play() : this.pause());
     this.playBtn.onclick = toggle;
+    this.muteBtn.onclick = () => {
+      if (!this.media) return;
+      this.media.muted = !this.media.muted;
+      this.renderControls();
+    };
     // A click-catcher over the video: toggles play, and stops YouTube/Vimeo
     // grabbing clicks (and their own UI) under ToyBox's controls.
     this.shield.addEventListener('click', toggle);
@@ -261,6 +270,12 @@ export class ToyBoxPlayer {
       this.scrub.value = String(Math.round((v.currentTime / v.duration) * 1000));
     }
     this.timeLabel.textContent = `${fmt(v.currentTime)} / ${fmt(v.duration || 0)}`;
+    if (this.shownMuted !== v.muted) {
+      this.shownMuted = v.muted;
+      this.muteBtn.innerHTML = v.muted ? ICON_MUTED : ICON_SOUND;
+      this.muteBtn.setAttribute('aria-label', v.muted ? 'Unmute' : 'Mute');
+      this.muteBtn.classList.toggle('tb-muted', v.muted);
+    }
   }
 
   private renderMarkers() {
@@ -278,6 +293,10 @@ export class ToyBoxPlayer {
     }
   }
 }
+
+const svg = (path: string) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${path}</svg>`;
+const ICON_SOUND = svg('<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>');
+const ICON_MUTED = svg('<path d="M17 9l5 6M22 9l-5 6"/>');
 
 /** Stand-in used before a lesson (and its video) is set. */
 const EMPTY_MEDIA: PlayerMedia = {

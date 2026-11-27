@@ -216,6 +216,8 @@ var EmbedMedia = class {
     __publicField(this, "dur", NaN);
     __publicField(this, "ready", false);
     __publicField(this, "isMuted", false);
+    /** True once the viewer muted it themselves (so playback doesn't unmute it again). */
+    __publicField(this, "userMuted", false);
     this.el = document.createElement("div");
     this.el.className = "tb-media tb-embed";
     this.target = document.createElement("div");
@@ -243,7 +245,8 @@ var EmbedMedia = class {
     return this.isMuted;
   }
   set muted(m) {
-    this.isMuted = m;
+    this.userMuted = m;
+    this.syncMuted(m);
     this.setMuted(m);
   }
   play() {
@@ -271,6 +274,12 @@ var EmbedMedia = class {
     this.el.remove();
   }
   // ---- for subclasses
+  /** The provider told us whether it's muted (e.g. a browser forced muted playback). */
+  syncMuted(m) {
+    if (m === this.isMuted) return;
+    this.isMuted = m;
+    this.emit("volumechange");
+  }
   emit(type) {
     this.events.dispatchEvent(new Event(type));
   }
@@ -396,6 +405,7 @@ var YouTubeMedia = class extends EmbedMedia {
       var _a;
       if (!((_a = this.yt) == null ? void 0 : _a.getCurrentTime)) return;
       this.report(this.yt.getCurrentTime());
+      if (this.yt.isMuted) this.syncMuted(this.yt.isMuted());
       this.emit("timeupdate");
     }, 250);
   }
@@ -410,7 +420,10 @@ var YouTubeMedia = class extends EmbedMedia {
     });
   }
   doPlay() {
-    this.call(() => this.yt.playVideo());
+    this.call(() => {
+      this.yt.playVideo();
+      if (!this.userMuted) this.yt.unMute();
+    });
   }
   doPause() {
     this.call(() => this.yt.pauseVideo());
@@ -496,8 +509,15 @@ var VimeoMedia = class extends EmbedMedia {
     }));
   }
   doPlay() {
-    this.call(() => this.vp.play().catch(() => {
-    }));
+    this.call(() => {
+      var _a, _b;
+      this.vp.play().catch(() => {
+      });
+      if (!this.userMuted) this.vp.setMuted(false).catch(() => {
+      });
+      (_b = (_a = this.vp).getMuted) == null ? void 0 : _b.call(_a).then((m) => this.syncMuted(!!m)).catch(() => {
+      });
+    });
   }
   doPause() {
     this.call(() => this.vp.pause().catch(() => {
@@ -561,13 +581,15 @@ var PanoptoMedia = class extends EmbedMedia {
   }
   /** Take Panopto's time only when it has actually changed (and isn't the pre-seek value). */
   sync() {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g;
     const t = (_b = (_a = this.api) == null ? void 0 : _a.getCurrentTime) == null ? void 0 : _b.call(_a);
     if (typeof t === "number" && t !== this.lastReported) {
       this.lastReported = t;
       this.report(t);
     }
     this.setDuration((_e = (_d = (_c = this.api) == null ? void 0 : _c.getDuration) == null ? void 0 : _d.call(_c)) != null ? _e : NaN);
+    const m = (_g = (_f = this.api) == null ? void 0 : _f.isMuted) == null ? void 0 : _g.call(_f);
+    if (typeof m === "boolean") this.syncMuted(m);
   }
   onState(state) {
     this.sync();
@@ -594,7 +616,10 @@ var PanoptoMedia = class extends EmbedMedia {
     });
   }
   doPlay() {
-    this.call(() => this.api.playVideo());
+    this.call(() => {
+      this.api.playVideo();
+      if (!this.userMuted) this.api.unmuteVideo();
+    });
   }
   doPause() {
     this.call(() => this.api.pauseVideo());
@@ -926,6 +951,8 @@ var ToyBoxPlayer = class {
     __publicField(this, "scrub");
     __publicField(this, "timeLabel");
     __publicField(this, "playBtn");
+    __publicField(this, "muteBtn");
+    __publicField(this, "shownMuted", null);
     __publicField(this, "cues", []);
     __publicField(this, "baseUrl", location.href);
     __publicField(this, "active", /* @__PURE__ */ new Map());
@@ -946,6 +973,7 @@ var ToyBoxPlayer = class {
             <input class="tb-scrub" type="range" min="0" max="1000" value="0" aria-label="Seek" />
           </div>
           <span class="tb-time">0:00 / 0:00</span>
+          <button class="tb-mute" aria-label="Mute"></button>
           <button class="tb-fs" aria-label="Fullscreen">\u26F6</button>
         </div>
       </div>`;
@@ -957,6 +985,7 @@ var ToyBoxPlayer = class {
     this.markers = q(".tb-markers");
     this.scrub = q(".tb-scrub");
     this.timeLabel = q(".tb-time");
+    this.muteBtn = q(".tb-mute");
     this.playBtn = q(".tb-play");
     if (opts.theme) applyTheme(opts.theme, this.root);
     this.wireControls(q(".tb-fs"));
@@ -1027,7 +1056,7 @@ var ToyBoxPlayer = class {
     this.mediaSrc = src;
     this.root.dataset.media = media.kind;
     this.stage.insertBefore(media.el, this.shield);
-    for (const ev of ["seeked", "pause", "loadedmetadata", "durationchange", "timeupdate", "ended"]) media.addEventListener(ev, () => this.sync());
+    for (const ev of ["seeked", "pause", "loadedmetadata", "durationchange", "timeupdate", "ended", "volumechange"]) media.addEventListener(ev, () => this.sync());
     media.addEventListener("loadedmetadata", () => this.renderMarkers());
     media.addEventListener("durationchange", () => this.renderMarkers());
     media.addEventListener("play", () => this.startLoop());
@@ -1113,6 +1142,11 @@ var ToyBoxPlayer = class {
   wireControls(fsBtn) {
     const toggle = () => this.video.paused ? this.play() : this.pause();
     this.playBtn.onclick = toggle;
+    this.muteBtn.onclick = () => {
+      if (!this.media) return;
+      this.media.muted = !this.media.muted;
+      this.renderControls();
+    };
     this.shield.addEventListener("click", toggle);
     this.scrub.oninput = () => {
       if (this.video.duration) this.seek(Number(this.scrub.value) / 1e3 * this.video.duration);
@@ -1140,6 +1174,12 @@ var ToyBoxPlayer = class {
       this.scrub.value = String(Math.round(v.currentTime / v.duration * 1e3));
     }
     this.timeLabel.textContent = `${fmt(v.currentTime)} / ${fmt(v.duration || 0)}`;
+    if (this.shownMuted !== v.muted) {
+      this.shownMuted = v.muted;
+      this.muteBtn.innerHTML = v.muted ? ICON_MUTED : ICON_SOUND;
+      this.muteBtn.setAttribute("aria-label", v.muted ? "Unmute" : "Mute");
+      this.muteBtn.classList.toggle("tb-muted", v.muted);
+    }
   }
   renderMarkers() {
     var _a;
@@ -1157,6 +1197,9 @@ var ToyBoxPlayer = class {
     }
   }
 };
+var svg = (path) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${path}</svg>`;
+var ICON_SOUND = svg('<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>');
+var ICON_MUTED = svg('<path d="M17 9l5 6M22 9l-5 6"/>');
 var EMPTY_MEDIA = {
   kind: "file",
   el: document.createElement("div"),
