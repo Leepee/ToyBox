@@ -50,7 +50,9 @@ export type ToyMessage =
   | { type: 'seek'; time: number }
   | { type: 'complete'; result?: unknown }
   | { type: 'log'; data: unknown }
-  | { type: 'resize'; height: number };
+  | { type: 'resize'; height: number }
+  /** Not sent by toys: the host saw the toy's frame navigate to another page and stopped it. */
+  | { type: 'navigated' };
 
 export interface CompletionRecord {
   cueId: string;
