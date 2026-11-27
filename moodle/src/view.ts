@@ -96,6 +96,14 @@ async function start(root: HTMLElement, cfg: ViewConfig) {
       .catch(Notification.exception);
   };
 
+  // A toy that tried to open another web page was stopped: note it in the logs.
+  const blocked = (toyId: string) => {
+    if (!/^\d+$/.test(toyId)) return;
+    Promise.resolve(
+      Ajax.call([{ methodname: 'mod_toybox_report_blocked', args: { cmid: cfg.cmid, toyid: Number(toyId) } }])[0],
+    ).catch(() => {});
+  };
+
   if (cfg.mode === 'toy') {
     const toy = toys[0];
     if (!toy) return;
@@ -109,6 +117,7 @@ async function start(root: HTMLElement, cfg: ViewConfig) {
         status.textContent = '✓ ' + cfg.strings.finished;
         save(toy.id, rec.result);
       },
+      onBlocked: () => blocked(toy.id),
     });
     host.show(toy, cfg.aspect);
     if (finished.has(toy.id)) status.textContent = '✓ ' + cfg.strings.finished;
@@ -144,6 +153,7 @@ async function start(root: HTMLElement, cfg: ViewConfig) {
       renderList();
       save(rec.cueId, rec.result);
     },
+    onBlocked: (cue) => blocked(cue.id),
   });
   player.setLesson({ title: '', video: cfg.videoUrl, cues: toys }, location.href);
   players.add(player);

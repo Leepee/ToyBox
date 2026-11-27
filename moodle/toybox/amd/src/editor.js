@@ -18,6 +18,8 @@ var ToyFrame = class {
     __publicField(this, "ready", false);
     __publicField(this, "queue", []);
     __publicField(this, "onMessage", (e) => this.handle(e));
+    /** True once the toy was stopped for navigating away. */
+    __publicField(this, "stopped", false);
     var _a;
     const f = document.createElement("iframe");
     f.className = "toy";
@@ -32,6 +34,15 @@ var ToyFrame = class {
     }
     this.el = f;
     window.addEventListener("message", this.onMessage);
+    let loads = 0;
+    f.addEventListener("load", () => {
+      if (++loads > 1 && !this.stopped) {
+        this.stopped = true;
+        f.removeAttribute("src");
+        f.srcdoc = "";
+        this.opts.emit({ type: "navigated" }, this.spec);
+      }
+    });
   }
   /** Send a message to the toy (queued until the toy says it's ready). */
   post(msg) {
@@ -100,12 +111,10 @@ function toyCsp(sdkUrl) {
   ].join("; ");
 }
 function prepareToyHtml(html, sdkUrl, lockdown = true) {
-  const sdkTag = `<script src="${sdkUrl}"><\/script>`;
-  let out = /toybox-sdk\.js/.test(html) ? html.replace(/(["'])[^"']*toybox-sdk\.js\1/g, `"${sdkUrl}"`) : html;
-  const head = (lockdown ? `<meta http-equiv="Content-Security-Policy" content="${toyCsp(sdkUrl)}">` : "") + (/toybox-sdk\.js/.test(html) ? "" : sdkTag);
-  if (/<head[^>]*>/i.test(out)) return out.replace(/<head[^>]*>/i, (m) => m + head);
-  if (/<html[^>]*>/i.test(out)) return out.replace(/<html[^>]*>/i, (m) => m + "<head>" + head + "</head>");
-  return head + out;
+  const usesSdk = /toybox-sdk\.js/.test(html);
+  const body = (usesSdk ? html.replace(/(["'])[^"']*toybox-sdk\.js\1/g, `"${sdkUrl}"`) : html).replace(/^\s*<!doctype[^>]*>/i, "");
+  const start = '<!doctype html><meta charset="utf-8">' + (lockdown ? `<meta http-equiv="Content-Security-Policy" content="${toyCsp(sdkUrl)}">` : "") + (usesSdk ? "" : `<script src="${sdkUrl}"><\/script>`);
+  return start + body;
 }
 
 // core/src/media.ts
@@ -1199,7 +1208,7 @@ var ToyBoxPlayer = class {
     if (cue.pause && this.media && !this.media.paused) this.media.pause();
   }
   onToyMessage(msg, cue) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     switch (msg.type) {
       case "pause":
         this.pause();
@@ -1217,6 +1226,16 @@ var ToyBoxPlayer = class {
       case "log":
         (_f = (_e = this.opts).onLog) == null ? void 0 : _f.call(_e, cue, msg.data);
         break;
+      case "navigated": {
+        const toy = this.active.get(cue.id);
+        if (toy) {
+          const note = blockedNotice();
+          Object.assign(note.style, { left: toy.el.style.left, top: toy.el.style.top, width: toy.el.style.width, height: toy.el.style.height });
+          toy.el.replaceWith(note);
+        }
+        (_h = (_g = this.opts).onBlocked) == null ? void 0 : _h.call(_g, cue);
+        break;
+      }
     }
   }
   wireControls(fsBtn) {
@@ -1293,6 +1312,13 @@ var ToyBoxPlayer = class {
 var svg = (path) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${path}</svg>`;
 var ICON_SOUND = svg('<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>');
 var ICON_MUTED = svg('<path d="M17 9l5 6M22 9l-5 6"/>');
+function blockedNotice() {
+  const n = document.createElement("div");
+  n.className = "tb-blocked";
+  n.setAttribute("role", "alert");
+  n.textContent = "This toy tried to open another web page, so ToyBox stopped it.";
+  return n;
+}
 var EMPTY_MEDIA = {
   kind: "file",
   el: document.createElement("div"),
@@ -1348,10 +1374,14 @@ var StandaloneToy = class {
       lockdown: this.opts.lockdown,
       theme: this.opts.theme,
       emit: (msg) => {
-        var _a3, _b2, _c, _d;
+        var _a3, _b2, _c, _d, _e, _f;
         if (msg.type === "complete") (_b2 = (_a3 = this.opts).onComplete) == null ? void 0 : _b2.call(_a3, { cueId: spec.id, label: spec.label, at: 0, result: msg.result });
         else if (msg.type === "log") (_d = (_c = this.opts).onLog) == null ? void 0 : _d.call(_c, spec, msg.data);
         else if (msg.type === "resize" && aspect === "auto") frame.el.style.height = `${Math.ceil(msg.height)}px`;
+        else if (msg.type === "navigated") {
+          frame.el.replaceWith(blockedNotice());
+          (_f = (_e = this.opts).onBlocked) == null ? void 0 : _f.call(_e, spec);
+        }
       }
     });
     if (aspect === "auto") frame.el.style.height = "320px";
@@ -1404,6 +1434,14 @@ function lintToy(html, ctx = {}) {
     add("error", "Browser storage (localStorage, cookies\u2026) isn\u2019t available to toys and will throw an error.");
   if (/\b(window\.top|parent\.document|top\.location|window\.open)\b/.test(code))
     add("error", "Toys can\u2019t reach the page around them or open windows.");
+  if (/\b(location\s*\.\s*(href|assign|replace)|(window|document|self|top|parent)\s*\.\s*location\b|location\s*=)/.test(code) || /http-equiv\s*=\s*["']?refresh/i.test(code))
+    add("error", "It tries to go to another web page (location / refresh). Toys must stay on their own page; ToyBox stops any toy that navigates away.");
+  if (/<a\b[^>]*\bhref\s*=\s*["']?(https?:)?\/\//i.test(code))
+    add("warning", "It links to another website. Clicking a link would take the toy away from its page, and ToyBox would stop it. Put links in the course page instead.");
+  if (/type\s*=\s*["']?password/i.test(code) || /\b(password|passcode|log\s*in|sign\s*in|username)\b/i.test(code.replace(/<script[\s\S]*?<\/script>/gi, "")))
+    add("error", "It mentions passwords or signing in. Toys must never ask learners for passwords or personal details.");
+  if (/\b(RTCPeerConnection|RTCDataChannel|webkitRTCPeerConnection)\b/.test(code))
+    add("error", "It uses WebRTC (peer-to-peer connections). Toys must not connect to anything outside the page.");
   if (/<form\b/i.test(code) && /\baction\s*=/i.test(code))
     add("warning", "Forms can\u2019t be submitted. Handle button clicks in JavaScript instead.");
   if (ctx.mode === "toy" && ctx.autoHeight && /100vh/.test(code))
@@ -1594,12 +1632,14 @@ async function mountEditor(root, cfg, host) {
   let current = 0;
   let aspect = cfg.aspect;
   let dirty = false;
+  const locked = !!cfg.codeLocked;
+  const historyCache = /* @__PURE__ */ new Map();
   const blankToy = () => {
     var _a2, _b;
     return {
       id: newId(),
       label: isVideo ? `${S.toy} ${toys.length + 1}` : S.toy,
-      html: STARTER,
+      html: locked ? "" : STARTER,
       params: { ...EXAMPLES[0].params },
       start: Math.floor((_a2 = player == null ? void 0 : player.video.currentTime) != null ? _a2 : 0),
       end: Math.floor((_b = player == null ? void 0 : player.video.currentTime) != null ? _b : 0) + 2,
@@ -1747,7 +1787,8 @@ async function mountEditor(root, cfg, host) {
       id: "mod-toybox-html",
       spellcheck: "false",
       wrap: "off",
-      rows: 18
+      rows: 18,
+      readonly: locked
     });
     html.value = (_a2 = t.html) != null ? _a2 : "";
     let lintTimer = 0;
@@ -1779,7 +1820,9 @@ async function mountEditor(root, cfg, host) {
     };
     const examples = el("select.custom-select.form-select", { "aria-label": S.startfrom });
     examples.append(el("option", { value: "", text: S.startfrom + "\u2026" }));
-    for (const ex of EXAMPLES) examples.append(el("option", { value: ex.file, text: ex.name }));
+    for (const ex of EXAMPLES) {
+      if (!(locked && ex.file === "starter")) examples.append(el("option", { value: ex.file, text: ex.name }));
+    }
     examples.onchange = async () => {
       var _a3;
       const ex = EXAMPLES.find((e) => e.file === examples.value);
@@ -1801,6 +1844,34 @@ async function mountEditor(root, cfg, host) {
       renderFields();
       preview();
     };
+    let historySel = null;
+    if (host.history && host.loadVersion && /^\d+$/.test(t.id)) {
+      const sel = historySel = el("select.custom-select.form-select", { "aria-label": S.history });
+      sel.append(el("option", { value: "", text: S.history + "\u2026" }));
+      if (!historyCache.has(t.id)) historyCache.set(t.id, host.history(t.id).catch(() => []));
+      historyCache.get(t.id).then((versions) => {
+        if (!versions.length) sel.append(el("option", { value: "", disabled: true, text: S.historyempty }));
+        for (const v of versions) {
+          sel.append(el("option", { value: String(v.id), text: `${v.timestr}${v.who ? " \xB7 " + v.who : ""} \xB7 ${v.hash}` }));
+        }
+      });
+      sel.onchange = async () => {
+        const vid = Number(sel.value);
+        if (!vid) return;
+        if (!window.confirm(S.restoreversionconfirm)) {
+          sel.value = "";
+          return;
+        }
+        try {
+          t.html = await host.loadVersion(t.id, vid);
+          markDirty();
+          renderFields();
+          preview();
+        } catch (e) {
+          host.error(e);
+        }
+      };
+    }
     const aiBtn = el("button.btn.btn-outline-primary", { type: "button", text: "\u2728 " + S.copyaiprompt, title: S.copyaiprompt_help });
     aiBtn.onclick = async () => {
       var _a3, _b2;
@@ -1908,9 +1979,8 @@ async function mountEditor(root, cfg, host) {
       el(
         "div.mod-toybox-row.mod-toybox-ai",
         {},
-        el("strong", { text: S.makewithai }),
-        aiBtn,
-        el("button.btn.btn-outline-secondary", {
+        ...locked ? [el("div.alert.alert-info.small.w-100.mb-0", { text: S.codelocked })] : [el("strong", { text: S.makewithai }), aiBtn],
+        locked ? null : el("button.btn.btn-outline-secondary", {
           type: "button",
           text: S.downloadguide,
           title: S.downloadguide_help,
@@ -1922,7 +1992,8 @@ async function mountEditor(root, cfg, host) {
             setTimeout(() => a.remove(), 1e3);
           }
         }),
-        examples
+        examples,
+        historySel
       ),
       el("div.mod-toybox-field", {}, el("label", { for: "mod-toybox-html", text: S.toycode }), html),
       el("div.mod-toybox-field", {}, el("label", { for: "mod-toybox-params", text: S.toyparams }), params, paramsErr),
@@ -1953,12 +2024,14 @@ async function mountEditor(root, cfg, host) {
     host.save(toys, aspect).then((saved) => {
       const keepIndex = current;
       toys = fromServer(saved);
+      historyCache.clear();
       if (!toys.length) toys.push(blankToy());
       current = Math.min(keepIndex, toys.length - 1);
       dirty = false;
       status.textContent = S.allsaved;
       status.classList.remove("unsaved");
       renderTabs();
+      renderFields();
       host.notify(S.saved, "success");
     }).catch(host.error).finally(() => saveBtn.disabled = false);
   };
@@ -1993,11 +2066,18 @@ var init = async (selector) => {
         Ajax.call([{ methodname: "mod_toybox_save_toys", args: { cmid: cfg.cmid, aspect, toys: JSON.stringify(payload) } }])[0]
       ).then((r) => JSON.parse(r.toys));
     },
+    history: (toyId) => historyCall(cfg.cmid, toyId, 0).then((r) => r.versions),
+    loadVersion: (toyId, versionId) => historyCall(cfg.cmid, toyId, versionId).then((r) => r.html),
     notify: (message, type = "info") => addToast(message, { type }),
     alert: (title, message) => Notification.alert(title, message),
     error: (e) => Notification.exception(e)
   });
 };
+function historyCall(cmid, toyId, versionid) {
+  return Promise.resolve(
+    Ajax.call([{ methodname: "mod_toybox_get_toy_history", args: { cmid, toyid: Number(toyId), versionid } }])[0]
+  );
+}
 export {
   init
 };

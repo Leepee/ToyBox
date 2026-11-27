@@ -25,6 +25,7 @@
 require(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
+use mod_toybox\local\results;
 use mod_toybox\local\toys;
 
 $id = required_param('id', PARAM_INT);
@@ -40,44 +41,44 @@ $PAGE->set_title(get_string('results', 'toybox') . ': ' . format_string($toybox-
 $PAGE->set_heading(format_string($course->fullname));
 $PAGE->set_context($context);
 
-$toylist = toys::get_toys($toybox->id);
-$users = get_enrolled_users($context, 'mod/toybox:submit', 0, 'u.*', 'u.lastname, u.firstname');
-$results = [];
-foreach ($DB->get_records('toybox_result', ['toyboxid' => $toybox->id]) as $r) {
-    $results[$r->userid][$r->toyid] = $r;
-}
+$page = optional_param('page', 0, PARAM_INT);
+$toylist = toys::get_toys($toybox->id, false);
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('results', 'toybox'));
+groups_print_activity_menu($cm, $PAGE->url);
+
+$groupid = results::visible_group($cm, $context);
+[$users, $total] = $groupid === null ? [[], 0] : results::learners($context, $groupid, $page);
 
 if (!$toylist || !$users) {
-    echo $OUTPUT->notification(get_string($toylist ? 'noresults_users' : 'noresults_toys', 'toybox'), 'info');
+    $message = !$toylist ? 'noresults_toys' : ($groupid === null ? 'noresults_nogroup' : 'noresults_users');
+    echo $OUTPUT->notification(get_string($message, 'toybox'), 'info');
 } else {
-    $table = new html_table();
-    $table->attributes['class'] = 'generaltable mod-toybox-results';
-    $table->head = [get_string('fullname')];
+    $byuser = results::for_learners($toybox->id, array_column($users, 'id'));
+    $dateformat = get_string('strftimedatetimeshort', 'core_langconfig');
+    $data = ['toys' => [], 'rows' => []];
     foreach ($toylist as $t) {
-        $table->head[] = format_string($t->label ?: get_string('untitled', 'toybox'))
-            . ($t->required ? '' : ' <small class="text-muted">(' . get_string('optional', 'toybox') . ')</small>');
+        $data['toys'][] = [
+            'label' => format_string($t->label ?: get_string('untitled', 'toybox'), true, ['context' => $context]),
+            'optional' => !$t->required,
+        ];
     }
     foreach ($users as $u) {
-        $row = [fullname($u)];
+        $cells = [];
         foreach ($toylist as $t) {
-            $r = $results[$u->id][$t->id] ?? null;
-            if (!$r) {
-                $row[] = '<span class="text-muted">–</span>';
-                continue;
-            }
-            $detail = s(\core_text::substr((string) $r->result, 0, 300));
-            $attempts = $r->attempts > 1
-                ? ' <small class="text-muted">(' . get_string('attempts', 'toybox', $r->attempts) . ')</small>'
-                : '';
-            $row[] = '<span class="text-success" title="' . $detail . '">✓</span> '
-                . userdate($r->timemodified, get_string('strftimedatetimeshort', 'core_langconfig')) . $attempts;
+            $r = $byuser[$u->id][$t->id] ?? null;
+            $cells[] = $r ? [
+                'done' => true,
+                'detail' => \core_text::substr((string) $r->result, 0, 300),
+                'when' => userdate($r->timemodified, $dateformat),
+                'attempts' => $r->attempts > 1 ? get_string('attempts', 'toybox', $r->attempts) : '',
+            ] : ['done' => false];
         }
-        $table->data[] = $row;
+        $data['rows'][] = ['name' => fullname($u), 'cells' => $cells];
     }
-    echo html_writer::table($table);
+    echo $OUTPUT->render_from_template('mod_toybox/results', $data);
+    echo $OUTPUT->paging_bar($total, $page, results::PER_PAGE, $PAGE->url);
     echo html_writer::tag('p', get_string('resultshelp', 'toybox'), ['class' => 'text-muted small']);
 }
 echo $OUTPUT->footer();

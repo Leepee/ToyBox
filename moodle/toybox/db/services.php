@@ -46,4 +46,18 @@ $functions = [
         'ajax' => true,
         'capabilities' => 'mod/toybox:edittoys',
     ],
+    'mod_toybox_get_toy_history' => [
+        'classname' => 'mod_toybox\external\get_toy_history',
+        'description' => 'Lists earlier versions of a toy, or returns one version\'s code.',
+        'type' => 'read',
+        'ajax' => true,
+        'capabilities' => 'mod/toybox:edittoys',
+    ],
+    'mod_toybox_report_blocked' => [
+        'classname' => 'mod_toybox\external\report_blocked',
+        'description' => 'Logs that a toy tried to open another web page and was stopped.',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'mod/toybox:view',
+    ],
 ];

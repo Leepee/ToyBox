@@ -51,6 +51,22 @@ class provider implements
             'timecreated' => 'privacy:metadata:toybox_result:timecreated',
             'timemodified' => 'privacy:metadata:toybox_result:timemodified',
         ], 'privacy:metadata:toybox_result');
+        $collection->add_database_table('toybox_toy', [
+            'usermodified' => 'privacy:metadata:toybox_toy:usermodified',
+            'timemodified' => 'privacy:metadata:toybox_toy:timemodified',
+        ], 'privacy:metadata:toybox_toy');
+        $collection->add_database_table('toybox_toy_history', [
+            'usermodified' => 'privacy:metadata:toybox_toy_history:usermodified',
+            'html' => 'privacy:metadata:toybox_toy_history:html',
+            'timecreated' => 'privacy:metadata:toybox_toy_history:timecreated',
+        ], 'privacy:metadata:toybox_toy_history');
+        // Videos from these sites play in the learner's browser, straight from the site.
+        foreach (['youtube', 'vimeo', 'panopto'] as $site) {
+            $collection->add_external_location_link($site, [
+                'ipaddress' => 'privacy:metadata:external:ipaddress',
+                'video' => 'privacy:metadata:external:video',
+            ], 'privacy:metadata:external:' . $site);
+        }
         return $collection;
     }
 
@@ -65,10 +81,11 @@ class provider implements
                   FROM {context} c
                   JOIN {course_modules} cm ON cm.id = c.instanceid AND c.contextlevel = :contextlevel
                   JOIN {modules} m ON m.id = cm.module AND m.name = 'toybox'
-                  JOIN {toybox_result} r ON r.toyboxid = cm.instance
-                 WHERE r.userid = :userid";
+                 WHERE EXISTS (SELECT 1 FROM {toybox_result} r WHERE r.toyboxid = cm.instance AND r.userid = :u1)
+                    OR EXISTS (SELECT 1 FROM {toybox_toy} t WHERE t.toyboxid = cm.instance AND t.usermodified = :u2)
+                    OR EXISTS (SELECT 1 FROM {toybox_toy_history} h WHERE h.toyboxid = cm.instance AND h.usermodified = :u3)";
         $list = new contextlist();
-        $list->add_from_sql($sql, ['contextlevel' => CONTEXT_MODULE, 'userid' => $userid]);
+        $list->add_from_sql($sql, ['contextlevel' => CONTEXT_MODULE, 'u1' => $userid, 'u2' => $userid, 'u3' => $userid]);
         return $list;
     }
 
@@ -82,12 +99,14 @@ class provider implements
         if (!$context instanceof \context_module) {
             return;
         }
-        $sql = "SELECT r.userid
-                  FROM {course_modules} cm
-                  JOIN {modules} m ON m.id = cm.module AND m.name = 'toybox'
-                  JOIN {toybox_result} r ON r.toyboxid = cm.instance
-                 WHERE cm.id = :cmid";
-        $userlist->add_from_sql('userid', $sql, ['cmid' => $context->instanceid]);
+        foreach (['toybox_result' => 'userid', 'toybox_toy' => 'usermodified', 'toybox_toy_history' => 'usermodified'] as $table => $field) {
+            $sql = "SELECT x.$field AS userid
+                      FROM {course_modules} cm
+                      JOIN {modules} m ON m.id = cm.module AND m.name = 'toybox'
+                      JOIN {{$table}} x ON x.toyboxid = cm.instance
+                     WHERE cm.id = :cmid AND x.$field <> 0";
+            $userlist->add_from_sql('userid', $sql, ['cmid' => $context->instanceid]);
+        }
     }
 
     /**
@@ -111,7 +130,11 @@ class provider implements
                                             JOIN {toybox_toy} t ON t.id = r.toyid
                                            WHERE r.toyboxid = ? AND r.userid = ?
                                         ORDER BY t.sortorder", [$cm->instance, $userid]);
-            if (!$rows) {
+            $edits = $DB->get_records_sql("SELECT h.id, h.label, h.timecreated
+                                             FROM {toybox_toy_history} h
+                                            WHERE h.toyboxid = ? AND h.usermodified = ?
+                                         ORDER BY h.timecreated", [$cm->instance, $userid]);
+            if (!$rows && !$edits) {
                 continue;
             }
             $results = [];
@@ -125,7 +148,15 @@ class provider implements
                 ];
             }
             $data = helper::get_context_data($context, $contextlist->get_user());
-            $data->results = $results;
+            if ($results) {
+                $data->results = $results;
+            }
+            if ($edits) {
+                $data->toyedits = array_values(array_map(fn($h) => [
+                    'toy' => $h->label,
+                    'time' => transform::datetime($h->timecreated),
+                ], $edits));
+            }
             writer::with_context($context)->export_data([], $data);
             helper::export_context_files($context, $contextlist->get_user());
         }
@@ -143,6 +174,9 @@ class provider implements
         }
         if ($cm = get_coursemodule_from_id('toybox', $context->instanceid)) {
             $DB->delete_records('toybox_result', ['toyboxid' => $cm->instance]);
+            // The toys are course content, so they stay; only who changed them is forgotten.
+            $DB->set_field('toybox_toy', 'usermodified', 0, ['toyboxid' => $cm->instance]);
+            $DB->set_field('toybox_toy_history', 'usermodified', 0, ['toyboxid' => $cm->instance]);
         }
     }
 
@@ -157,6 +191,9 @@ class provider implements
         foreach ($contextlist->get_contexts() as $context) {
             if ($context instanceof \context_module && ($cm = get_coursemodule_from_id('toybox', $context->instanceid))) {
                 $DB->delete_records('toybox_result', ['toyboxid' => $cm->instance, 'userid' => $userid]);
+                $where = ['toyboxid' => $cm->instance, 'usermodified' => $userid];
+                $DB->set_field('toybox_toy', 'usermodified', 0, $where);
+                $DB->set_field('toybox_toy_history', 'usermodified', 0, $where);
             }
         }
     }
@@ -175,5 +212,8 @@ class provider implements
         [$insql, $params] = $DB->get_in_or_equal($userlist->get_userids(), SQL_PARAMS_NAMED);
         $params['toyboxid'] = $cm->instance;
         $DB->delete_records_select('toybox_result', "toyboxid = :toyboxid AND userid $insql", $params);
+        foreach (['toybox_toy', 'toybox_toy_history'] as $table) {
+            $DB->set_field_select($table, 'usermodified', 0, "toyboxid = :toyboxid AND usermodified $insql", $params);
+        }
     }
 }

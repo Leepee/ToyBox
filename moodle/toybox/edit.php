@@ -48,7 +48,7 @@ foreach (
         'copyaiprompt', 'copyaiprompt_help', 'deletetoy', 'deletetoyconfirm', 'downloadguide', 'end', 'height',
         'makewithai', 'messages', 'messageshelp', 'novideo', 'noproblems', 'pausevideo', 'posx', 'posy', 'preview',
         'previewing', 'promptcopied', 'promptfailed', 'replacecode', 'requiredtoy', 'resumeoncomplete', 'saved',
-        'savechanges', 'downloadguide_help', 'onlinevideo',
+        'savechanges', 'downloadguide_help', 'onlinevideo', 'history', 'historyempty', 'restoreversionconfirm', 'codelocked',
         'shape', 'start', 'startfrom', 'starthere', 'starthere_help', 'toy', 'toycode', 'toylabel',
         'toyparams', 'unsaved', 'untitled', 'width'] as $key
 ) {
@@ -59,6 +59,7 @@ $config = [
     'cmid' => (int) $cm->id,
     'mode' => $toybox->mode,
     'aspect' => $toybox->aspect,
+    'codeLocked' => (bool) get_config('mod_toybox', 'bundledonly'),
     'theme' => get_config('mod_toybox', 'theme') ?: 'auto',
     'videoUrl' => toys::video_url($toybox, $context),
     'sdkUrl' => (new moodle_url('/mod/toybox/sdk/toybox-sdk.js'))->out(false),

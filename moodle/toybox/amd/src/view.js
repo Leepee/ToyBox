@@ -18,6 +18,8 @@ var ToyFrame = class {
     __publicField(this, "ready", false);
     __publicField(this, "queue", []);
     __publicField(this, "onMessage", (e) => this.handle(e));
+    /** True once the toy was stopped for navigating away. */
+    __publicField(this, "stopped", false);
     var _a;
     const f = document.createElement("iframe");
     f.className = "toy";
@@ -32,6 +34,15 @@ var ToyFrame = class {
     }
     this.el = f;
     window.addEventListener("message", this.onMessage);
+    let loads = 0;
+    f.addEventListener("load", () => {
+      if (++loads > 1 && !this.stopped) {
+        this.stopped = true;
+        f.removeAttribute("src");
+        f.srcdoc = "";
+        this.opts.emit({ type: "navigated" }, this.spec);
+      }
+    });
   }
   /** Send a message to the toy (queued until the toy says it's ready). */
   post(msg) {
@@ -100,12 +111,10 @@ function toyCsp(sdkUrl) {
   ].join("; ");
 }
 function prepareToyHtml(html, sdkUrl, lockdown = true) {
-  const sdkTag = `<script src="${sdkUrl}"><\/script>`;
-  let out = /toybox-sdk\.js/.test(html) ? html.replace(/(["'])[^"']*toybox-sdk\.js\1/g, `"${sdkUrl}"`) : html;
-  const head = (lockdown ? `<meta http-equiv="Content-Security-Policy" content="${toyCsp(sdkUrl)}">` : "") + (/toybox-sdk\.js/.test(html) ? "" : sdkTag);
-  if (/<head[^>]*>/i.test(out)) return out.replace(/<head[^>]*>/i, (m) => m + head);
-  if (/<html[^>]*>/i.test(out)) return out.replace(/<html[^>]*>/i, (m) => m + "<head>" + head + "</head>");
-  return head + out;
+  const usesSdk = /toybox-sdk\.js/.test(html);
+  const body = (usesSdk ? html.replace(/(["'])[^"']*toybox-sdk\.js\1/g, `"${sdkUrl}"`) : html).replace(/^\s*<!doctype[^>]*>/i, "");
+  const start2 = '<!doctype html><meta charset="utf-8">' + (lockdown ? `<meta http-equiv="Content-Security-Policy" content="${toyCsp(sdkUrl)}">` : "") + (usesSdk ? "" : `<script src="${sdkUrl}"><\/script>`);
+  return start2 + body;
 }
 
 // core/src/media.ts
@@ -1187,7 +1196,7 @@ var ToyBoxPlayer = class {
     if (cue.pause && this.media && !this.media.paused) this.media.pause();
   }
   onToyMessage(msg, cue) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     switch (msg.type) {
       case "pause":
         this.pause();
@@ -1205,6 +1214,16 @@ var ToyBoxPlayer = class {
       case "log":
         (_f = (_e = this.opts).onLog) == null ? void 0 : _f.call(_e, cue, msg.data);
         break;
+      case "navigated": {
+        const toy = this.active.get(cue.id);
+        if (toy) {
+          const note = blockedNotice();
+          Object.assign(note.style, { left: toy.el.style.left, top: toy.el.style.top, width: toy.el.style.width, height: toy.el.style.height });
+          toy.el.replaceWith(note);
+        }
+        (_h = (_g = this.opts).onBlocked) == null ? void 0 : _h.call(_g, cue);
+        break;
+      }
     }
   }
   wireControls(fsBtn) {
@@ -1281,6 +1300,13 @@ var ToyBoxPlayer = class {
 var svg = (path) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${path}</svg>`;
 var ICON_SOUND = svg('<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>');
 var ICON_MUTED = svg('<path d="M17 9l5 6M22 9l-5 6"/>');
+function blockedNotice() {
+  const n = document.createElement("div");
+  n.className = "tb-blocked";
+  n.setAttribute("role", "alert");
+  n.textContent = "This toy tried to open another web page, so ToyBox stopped it.";
+  return n;
+}
 var EMPTY_MEDIA = {
   kind: "file",
   el: document.createElement("div"),
@@ -1336,10 +1362,14 @@ var StandaloneToy = class {
       lockdown: this.opts.lockdown,
       theme: this.opts.theme,
       emit: (msg) => {
-        var _a3, _b2, _c, _d;
+        var _a3, _b2, _c, _d, _e, _f;
         if (msg.type === "complete") (_b2 = (_a3 = this.opts).onComplete) == null ? void 0 : _b2.call(_a3, { cueId: spec.id, label: spec.label, at: 0, result: msg.result });
         else if (msg.type === "log") (_d = (_c = this.opts).onLog) == null ? void 0 : _d.call(_c, spec, msg.data);
         else if (msg.type === "resize" && aspect === "auto") frame.el.style.height = `${Math.ceil(msg.height)}px`;
+        else if (msg.type === "navigated") {
+          frame.el.replaceWith(blockedNotice());
+          (_f = (_e = this.opts).onBlocked) == null ? void 0 : _f.call(_e, spec);
+        }
       }
     });
     if (aspect === "auto") frame.el.style.height = "320px";
@@ -1446,6 +1476,13 @@ async function start(root, cfg) {
       }
     }).catch(Notification.exception);
   };
+  const blocked = (toyId) => {
+    if (!/^\d+$/.test(toyId)) return;
+    Promise.resolve(
+      Ajax.call([{ methodname: "mod_toybox_report_blocked", args: { cmid: cfg.cmid, toyid: Number(toyId) } }])[0]
+    ).catch(() => {
+    });
+  };
   if (cfg.mode === "toy") {
     const toy = toys[0];
     if (!toy) return;
@@ -1458,7 +1495,8 @@ async function start(root, cfg) {
         finished.add(toy.id);
         status.textContent = "\u2713 " + cfg.strings.finished;
         save(toy.id, rec.result);
-      }
+      },
+      onBlocked: () => blocked(toy.id)
     });
     host.show(toy, cfg.aspect);
     if (finished.has(toy.id)) status.textContent = "\u2713 " + cfg.strings.finished;
@@ -1491,7 +1529,8 @@ async function start(root, cfg) {
       finished.add(rec.cueId);
       renderList();
       save(rec.cueId, rec.result);
-    }
+    },
+    onBlocked: (cue) => blocked(cue.id)
   });
   player.setLesson({ title: "", video: cfg.videoUrl, cues: toys }, location.href);
   players.add(player);

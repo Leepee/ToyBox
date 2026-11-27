@@ -22,6 +22,16 @@ export interface EditorConfig {
   guideUrl: string;
   toys: any[];
   strings: Record<string, string>;
+  /** The site only allows the bundled example toys: code can't be typed in or generated. */
+  codeLocked?: boolean;
+}
+
+/** One saved version of a toy's code. */
+export interface ToyVersion {
+  id: number;
+  timestr: string;
+  who: string;
+  hash: string;
 }
 
 /** What the page around the editor provides (Moodle and WordPress differ here). */
@@ -33,6 +43,10 @@ export interface EditorHost {
   notify: (message: string, type?: 'success' | 'info' | 'warning' | 'danger') => void;
   alert: (title: string, message: string) => void;
   error: (e: unknown) => void;
+  /** Earlier versions of a saved toy, newest first (hosts that keep history). */
+  history?: (toyId: string) => Promise<ToyVersion[]>;
+  /** The code of one earlier version. */
+  loadVersion?: (toyId: string, versionId: number) => Promise<string>;
 }
 
 let newCounter = 0;
@@ -49,11 +63,13 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
   let current = 0;
   let aspect: Aspect = cfg.aspect;
   let dirty = false;
+  const locked = !!cfg.codeLocked;
+  const historyCache = new Map<string, Promise<ToyVersion[]>>();
 
   const blankToy = (): EditorToy => ({
     id: newId(),
     label: isVideo ? `${S.toy} ${toys.length + 1}` : S.toy,
-    html: STARTER,
+    html: locked ? '' : STARTER,
     params: { ...EXAMPLES[0].params },
     start: Math.floor(player?.video.currentTime ?? 0),
     end: Math.floor(player?.video.currentTime ?? 0) + 2,
@@ -216,6 +232,7 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
       spellcheck: 'false',
       wrap: 'off',
       rows: 18,
+      readonly: locked,
     });
     html.value = t.html ?? '';
     let lintTimer = 0;
@@ -249,7 +266,9 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
 
     const examples = el<'select'>('select.custom-select.form-select', { 'aria-label': S.startfrom });
     examples.append(el('option', { value: '', text: S.startfrom + '…' }));
-    for (const ex of EXAMPLES) examples.append(el('option', { value: ex.file, text: ex.name }));
+    for (const ex of EXAMPLES) {
+      if (!(locked && ex.file === 'starter')) examples.append(el('option', { value: ex.file, text: ex.name }));
+    }
     examples.onchange = async () => {
       const ex = EXAMPLES.find((e) => e.file === examples.value);
       if (!ex) return;
@@ -270,6 +289,36 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
       renderFields();
       preview();
     };
+
+    // Earlier versions of this toy's code (saved toys only).
+    let historySel: HTMLSelectElement | null = null;
+    if (host.history && host.loadVersion && /^\d+$/.test(t.id)) {
+      const sel = (historySel = el<'select'>('select.custom-select.form-select', { 'aria-label': S.history }));
+      sel.append(el('option', { value: '', text: S.history + '…' }));
+      if (!historyCache.has(t.id)) historyCache.set(t.id, host.history(t.id).catch(() => []));
+      historyCache.get(t.id)!.then((versions) => {
+        if (!versions.length) sel.append(el('option', { value: '', disabled: true, text: S.historyempty }));
+        for (const v of versions) {
+          sel.append(el('option', { value: String(v.id), text: `${v.timestr}${v.who ? ' · ' + v.who : ''} · ${v.hash}` }));
+        }
+      });
+      sel.onchange = async () => {
+        const vid = Number(sel.value);
+        if (!vid) return;
+        if (!window.confirm(S.restoreversionconfirm)) {
+          sel.value = '';
+          return;
+        }
+        try {
+          t.html = await host.loadVersion!(t.id, vid);
+          markDirty();
+          renderFields();
+          preview();
+        } catch (e) {
+          host.error(e);
+        }
+      };
+    }
 
     const aiBtn = el<'button'>('button.btn.btn-outline-primary', { type: 'button', text: '✨ ' + S.copyaiprompt, title: S.copyaiprompt_help });
     aiBtn.onclick = async () => {
@@ -379,9 +428,10 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
       el(
         'div.mod-toybox-row.mod-toybox-ai',
         {},
-        el('strong', { text: S.makewithai }),
-        aiBtn,
-        el('button.btn.btn-outline-secondary', {
+        ...(locked
+          ? [el('div.alert.alert-info.small.w-100.mb-0', { text: S.codelocked })]
+          : [el('strong', { text: S.makewithai }), aiBtn]),
+        locked ? null : el('button.btn.btn-outline-secondary', {
           type: 'button',
           text: S.downloadguide,
           title: S.downloadguide_help,
@@ -394,6 +444,7 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
           },
         }),
         examples,
+        historySel,
       ),
       el('div.mod-toybox-field', {}, el('label', { for: 'mod-toybox-html', text: S.toycode }), html),
       el('div.mod-toybox-field', {}, el('label', { for: 'mod-toybox-params', text: S.toyparams }), params, paramsErr),
@@ -430,12 +481,14 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
       .then((saved) => {
         const keepIndex = current;
         toys = fromServer(saved);
+        historyCache.clear();
         if (!toys.length) toys.push(blankToy());
         current = Math.min(keepIndex, toys.length - 1);
         dirty = false;
         status.textContent = S.allsaved;
         status.classList.remove('unsaved');
         renderTabs();
+        renderFields();
         host.notify(S.saved, 'success');
       })
       .catch(host.error)

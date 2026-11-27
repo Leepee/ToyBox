@@ -35,11 +35,11 @@ function toybox_supports($feature) {
         case FEATURE_COMPLETION_TRACKS_VIEWS:
         case FEATURE_COMPLETION_HAS_RULES:
         case FEATURE_BACKUP_MOODLE2:
+        case FEATURE_GROUPS:
+        case FEATURE_GROUPINGS:
             return true;
         case FEATURE_GRADE_HAS_GRADE:
         case FEATURE_GRADE_OUTCOMES:
-        case FEATURE_GROUPS:
-        case FEATURE_GROUPINGS:
             return false;
         case FEATURE_MOD_PURPOSE:
             return MOD_PURPOSE_INTERACTIVECONTENT;
