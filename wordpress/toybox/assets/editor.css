@@ -33,6 +33,11 @@
 .tb-standalone .toy { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; }
 .tb-standalone.tb-auto .toy { position: static; display: block; }
 
+/* Where a toy was stopped for trying to leave its own page */
+.tb-blocked { position: absolute; display: grid; place-items: center; padding: 1em; text-align: center; font-weight: 600;
+  background: var(--tb-surface, #fff); color: var(--tb-danger, #b91c1c); border: 2px solid var(--tb-danger, #b91c1c); border-radius: var(--tb-radius, 8px); }
+.tb-standalone .tb-blocked { position: static; min-height: 160px; }
+
 /* Moodle-specific ToyBox styles (the player styles come from core/src/player.css). */
 .mod-toybox-view .tb-player { max-width: 100%; }
 .mod-toybox-status { margin-top: .75rem; color: var(--bs-success, #15803d); font-weight: 600; min-height: 1.5em; }

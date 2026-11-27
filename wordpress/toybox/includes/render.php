@@ -29,14 +29,23 @@ function toybox_render( $post_id ) {
 	wp_enqueue_style( 'toybox', TOYBOX_URL . 'assets/toybox.css', array(), TOYBOX_VERSION );
 	wp_enqueue_script( 'toybox', TOYBOX_URL . 'assets/view.js', array(), TOYBOX_VERSION, true );
 
+	// The player loads each toy from its own address (see frame.php), not from the page.
+	$toys = array_map(
+		static function ( $toy ) use ( $post_id ) {
+			$toy['toy'] = toybox_frame_url( $post_id, $toy );
+			unset( $toy['html'] );
+			return $toy;
+		},
+		$data['toys']
+	);
 	$config = array(
 		'mode'     => $data['mode'],
 		'aspect'   => $data['aspect'],
 		'theme'    => toybox_theme_setting(),
 		'site'     => toybox_site_tokens(),
 		'videoUrl' => toybox_video_url( $data ),
-		'sdkUrl'   => TOYBOX_URL . 'assets/sdk/toybox-sdk.js',
-		'toys'     => $data['toys'],
+		'sdkUrl'   => toybox_sdk_url(),
+		'toys'     => $toys,
 		'strings'  => array(
 			'toysinthisvideo' => __( 'Toys in this video', 'toybox' ),
 			'jumpto'          => __( 'Jump to this toy', 'toybox' ),

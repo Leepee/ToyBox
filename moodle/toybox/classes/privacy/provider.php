@@ -99,7 +99,8 @@ class provider implements
         if (!$context instanceof \context_module) {
             return;
         }
-        foreach (['toybox_result' => 'userid', 'toybox_toy' => 'usermodified', 'toybox_toy_history' => 'usermodified'] as $table => $field) {
+        $tables = ['toybox_result' => 'userid', 'toybox_toy' => 'usermodified', 'toybox_toy_history' => 'usermodified'];
+        foreach ($tables as $table => $field) {
             $sql = "SELECT x.$field AS userid
                       FROM {course_modules} cm
                       JOIN {modules} m ON m.id = cm.module AND m.name = 'toybox'

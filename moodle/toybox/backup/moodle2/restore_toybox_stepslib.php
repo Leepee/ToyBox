@@ -54,10 +54,10 @@ class restore_toybox_activity_structure_step extends restore_activity_structure_
         // Restored toys stay visible, but teachers are asked to look them over. Toys from another
         // Moodle site are held back from learners until a teacher has (duplicating and importing
         // within this site need neither).
-        $plan = $this->get_task()->get_plan();
-        if (!$plan->is_samesite()) {
+        $task = $this->get_task();
+        if (!$task->is_samesite()) {
             $data->restorereview = 2;
-        } else if ($plan->get_mode() != backup::MODE_IMPORT) {
+        } else if (($task->get_info()->mode ?? null) != backup::MODE_IMPORT) {
             $data->restorereview = 1;
         } else {
             $data->restorereview = 0;
