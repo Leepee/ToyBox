@@ -97,7 +97,7 @@ jobs:
       - name: Zip the plugin (Moodle expects a zip with a single "toybox" folder)
         run: |
           cd moodle
-          zip -r ../mod_toybox.zip toybox
+          zip -r -D ../mod_toybox.zip toybox
       - uses: actions/upload-artifact@v4
         with:
           name: mod_toybox
