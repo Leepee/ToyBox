@@ -29,7 +29,7 @@ Microsoft moves these menus around, so the names may differ slightly.
 
 - **PowerPoint for the web:** *Home → Add-ins → Advanced → Upload My Add-in*, and choose `manifest.xml`.
 - **Windows:** the *File → Options → Add-ins* screen is for old-style `.ppam` macro add-ins and can't load ToyBox. Use one of these instead:
-  - **A shared folder** (no admin rights needed):
+  - **A shared folder** (no admin rights needed; tested on Windows):
     1. Make a folder (e.g. `C:\ToyBoxAddin`) and put `manifest.xml` in it.
     2. Share it: right-click the folder → *Properties → Sharing → Share*, share it with yourself, and note the *Network path* (like `\\YOUR-PC\ToyBoxAddin`).
     3. In PowerPoint: *File → Options → Trust Center → Trust Center Settings → Trusted Add-in Catalogs*. Paste the network path into *Catalog Url*, press *Add catalog*, tick *Show in Menu*, then OK.
