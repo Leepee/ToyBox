@@ -1604,6 +1604,63 @@ function el(tag, attrs = {}, ...kids) {
   return node;
 }
 
+// core/src/toyFile.ts
+var ASPECTS = ["16:9", "4:3", "1:1", "3:4", "auto"];
+var MAX_TOY_FILE = 4 * 1024 * 1024;
+function toToyFile(toy, aspect) {
+  var _a, _b, _c;
+  const file = {
+    toybox: 1,
+    label: (_a = toy.label) != null ? _a : "",
+    html: (_b = toy.html) != null ? _b : "",
+    params: (_c = toy.params) != null ? _c : {},
+    ...aspect ? { aspect } : {},
+    ...toy.rect ? { rect: toy.rect } : {},
+    ...toy.pause !== void 0 ? { pause: !!toy.pause } : {},
+    ...toy.resumeOnComplete !== void 0 ? { resumeOnComplete: !!toy.resumeOnComplete } : {},
+    ...toy.required !== void 0 ? { required: !!toy.required } : {}
+  };
+  return JSON.stringify(file, null, 2) + "\n";
+}
+function looksLikeToyFile(text) {
+  return /^\s*\{\s*"toybox"\s*:/.test(text);
+}
+var num = (v, lo, hi, d) => {
+  const n = typeof v === "number" && Number.isFinite(v) ? v : d;
+  return Math.min(hi, Math.max(lo, n));
+};
+function parseToyFile(text) {
+  if (text.length > MAX_TOY_FILE) throw new Error("too large");
+  let d;
+  try {
+    d = JSON.parse(text);
+  } catch {
+    throw new Error("not a toy file");
+  }
+  if (!d || typeof d !== "object" || d.toybox !== 1 || typeof d.html !== "string") throw new Error("not a toy file");
+  const file = {
+    toybox: 1,
+    label: typeof d.label === "string" ? d.label.slice(0, 255) : "",
+    html: d.html,
+    params: d.params && typeof d.params === "object" && !Array.isArray(d.params) ? d.params : {}
+  };
+  if (ASPECTS.includes(d.aspect)) file.aspect = d.aspect;
+  if (d.rect && typeof d.rect === "object") {
+    file.rect = {
+      x: num(d.rect.x, 0, 100, 20),
+      y: num(d.rect.y, 0, 100, 12),
+      w: num(d.rect.w, 5, 100, 60),
+      h: num(d.rect.h, 5, 100, 62)
+    };
+  }
+  for (const k of ["pause", "resumeOnComplete", "required"]) if (typeof d[k] === "boolean") file[k] = d[k];
+  return file;
+}
+function toyFileName(label) {
+  const base = (label != null ? label : "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+  return `${base || "toy"}.toybox.json`;
+}
+
 // core/src/editor.ts
 var newCounter = 0;
 var newId = () => `toy-${Date.now().toString(36)}-${++newCounter}`;
@@ -1617,6 +1674,7 @@ async function mountEditor(root, cfg, host) {
   let aspect = cfg.aspect;
   let dirty = false;
   const locked = !!cfg.codeLocked;
+  const ask = (message) => host.confirm ? host.confirm(message) : Promise.resolve(window.confirm(message));
   const historyCache = /* @__PURE__ */ new Map();
   const blankToy = () => {
     var _a2, _b;
@@ -1777,6 +1835,12 @@ async function mountEditor(root, cfg, host) {
     html.value = (_a2 = t.html) != null ? _a2 : "";
     let lintTimer = 0;
     html.oninput = () => {
+      if (!locked && looksLikeToyFile(html.value)) {
+        try {
+          return applyToyFile(parseToyFile(html.value));
+        } catch {
+        }
+      }
       t.html = html.value;
       markDirty();
       clearTimeout(lintTimer);
@@ -1811,7 +1875,7 @@ async function mountEditor(root, cfg, host) {
       var _a3;
       const ex = EXAMPLES.find((e) => e.file === examples.value);
       if (!ex) return;
-      if (((_a3 = t.html) == null ? void 0 : _a3.trim()) && t.html !== STARTER && !window.confirm(S.replacecode)) {
+      if (((_a3 = t.html) == null ? void 0 : _a3.trim()) && t.html !== STARTER && !await ask(S.replacecode)) {
         examples.value = "";
         return;
       }
@@ -1842,7 +1906,7 @@ async function mountEditor(root, cfg, host) {
       sel.onchange = async () => {
         const vid = Number(sel.value);
         if (!vid) return;
-        if (!window.confirm(S.restoreversionconfirm)) {
+        if (!await ask(S.restoreversionconfirm)) {
           sel.value = "";
           return;
         }
@@ -1879,6 +1943,62 @@ async function mountEditor(root, cfg, host) {
         host.alert(S.copyaiprompt, S.promptfailed);
       }
     };
+    const applyToyFile = (f) => {
+      var _a3;
+      t.html = f.html;
+      t.params = (_a3 = f.params) != null ? _a3 : {};
+      if (f.label) t.label = f.label;
+      if (isVideo) {
+        if (f.rect) t.rect = { ...f.rect };
+        if (f.pause !== void 0) t.pause = f.pause;
+        if (f.resumeOnComplete !== void 0) t.resumeOnComplete = f.resumeOnComplete;
+      } else if (f.aspect) {
+        aspect = f.aspect;
+      }
+      if (f.required !== void 0) t.required = f.required;
+      markDirty();
+      renderTabs();
+      renderFields();
+      preview();
+      host.notify(S.imported, "success");
+    };
+    const exportBtn = el("button.btn.btn-outline-secondary", {
+      type: "button",
+      text: "\u2B07 " + S.exporttoy,
+      title: S.exporttoy_help,
+      onclick: async () => {
+        const text = toToyFile(t, isVideo ? void 0 : aspect);
+        const a = el("a", { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: toyFileName(t.label) });
+        document.body.append(a);
+        a.click();
+        setTimeout(() => a.remove(), 1e3);
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+        }
+        host.notify(S.exported, "success");
+      }
+    });
+    const fileInput = el("input", { type: "file", accept: ".json,application/json", hidden: true });
+    fileInput.onchange = async () => {
+      var _a3, _b2;
+      const file = (_a3 = fileInput.files) == null ? void 0 : _a3[0];
+      fileInput.value = "";
+      if (!file) return;
+      try {
+        const f = parseToyFile(await file.text());
+        if (((_b2 = t.html) == null ? void 0 : _b2.trim()) && t.html !== STARTER && !await ask(S.importconfirm)) return;
+        applyToyFile(f);
+      } catch {
+        host.alert(S.importtoy, S.badtoyfile);
+      }
+    };
+    const importBtn = el("button.btn.btn-outline-secondary", {
+      type: "button",
+      text: "\u2B06 " + S.importtoy,
+      title: S.importtoy_help,
+      onclick: () => fileInput.click()
+    });
     const rows = [
       el(
         "div.mod-toybox-row",
@@ -1979,6 +2099,7 @@ async function mountEditor(root, cfg, host) {
         examples,
         historySel
       ),
+      el("div.mod-toybox-row.mod-toybox-files", {}, exportBtn, locked ? null : importBtn, fileInput),
       el("div.mod-toybox-field", {}, el("label", { for: "mod-toybox-html", text: S.toycode }), html),
       el("div.mod-toybox-field", {}, el("label", { for: "mod-toybox-params", text: S.toyparams }), params, paramsErr),
       el(
@@ -1988,8 +2109,8 @@ async function mountEditor(root, cfg, host) {
         isVideo ? el("button.btn.btn-outline-danger", {
           type: "button",
           text: S.deletetoy,
-          onclick: () => {
-            if (!window.confirm(S.deletetoyconfirm)) return;
+          onclick: async () => {
+            if (!await ask(S.deletetoyconfirm)) return;
             toys.splice(current, 1);
             if (!toys.length) toys.push(blankToy());
             markDirty();

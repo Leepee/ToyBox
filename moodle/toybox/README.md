@@ -48,6 +48,10 @@ Teachers write toys in HTML, or get an AI to write them: the toy editor's **Copy
 - Toys appear within a fraction of a second of their time; uploaded video files are frame-accurate.
 - Learners' browsers need to reach `youtube.com`/`youtube-nocookie.com`, `vimeo.com` or your Panopto server, as for any embedded video.
 
+## Toy files: Moodle, WordPress and PowerPoint
+
+**Export toy** in the editor saves the toy as a `.toybox.json` file (and copies it). **Import toy**, or pasting a toy file into *Toy code*, brings it into another activity, the WordPress plugin or the ToyBox PowerPoint add-in. So a toy shown in a lecture can go straight onto the Moodle page. With *Only allow the toys that come with ToyBox* on, Import is hidden.
+
 ## Look and feel
 
 *Site administration → Plugins → Activity modules → ToyBox → Look and feel* sets the colours and font of ToyBox players, editors and toys:

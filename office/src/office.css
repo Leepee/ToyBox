@@ -1,0 +1,66 @@
+/* ToyBox PowerPoint add-in: the box on the slide, and the editor window. */
+:root {
+  --o-text: #1f1f1f; --o-muted: #616161; --o-bg: #ffffff; --o-soft: #f5f5f5; --o-line: #d1d1d1;
+  --o-accent: #c43e1c; /* PowerPoint orange-red */ --o-on-accent: #ffffff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --o-text: #f5f5f5; --o-muted: #c4c4c4; --o-bg: #1f1f1f; --o-soft: #2b2b2b; --o-line: #4a4a4a; --o-accent: #e86c4a; --o-on-accent: #1f1f1f; color-scheme: dark; }
+}
+html, body { margin: 0; height: 100%; }
+body.tb-office { font: 14px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color: var(--o-text); background: var(--o-bg); }
+
+/* ---- the slide */
+body.tb-office-slide { background: transparent; overflow: hidden; }
+#toybox-slide { position: relative; width: 100%; height: 100%; }
+.tb-office-stage, .tb-office-stage .tb-standalone { width: 100%; height: 100%; }
+.tb-office-stage .tb-standalone { aspect-ratio: auto !important; }
+.tb-office-edit {
+  position: absolute; top: 6px; right: 6px; z-index: 5; font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 4px;
+  border: 1px solid var(--o-line); background: var(--o-bg); color: var(--o-text); cursor: pointer; opacity: .2; transition: opacity .15s;
+}
+#toybox-slide:hover .tb-office-edit, .tb-office-edit:focus { opacity: 1; }
+.tb-office-welcome { box-sizing: border-box; height: 100%; overflow: auto; padding: clamp(12px, 4vw, 32px); background: var(--o-bg); border: 1px dashed var(--o-line); }
+.tb-office-welcome h1 { font-size: clamp(18px, 3.2vw, 28px); margin: 0 0 .3em; }
+.tb-office-welcome p { color: var(--o-muted); margin: 0 0 1em; max-width: 60ch; }
+.tb-office-examples, .tb-office-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.tb-office-btn { font: inherit; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--o-line); background: var(--o-soft); color: var(--o-text); cursor: pointer; }
+.tb-office-btn:hover { border-color: var(--o-accent); }
+.tb-office-btn.primary { background: var(--o-accent); border-color: var(--o-accent); color: var(--o-on-accent); }
+.tb-office-status { color: var(--o-muted); font-size: 13px; }
+.tb-office-overlay { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; z-index: 50; background: var(--o-bg); }
+
+/* ---- the editor window */
+body.tb-office-editorpage { overflow: auto; }
+#toybox-editor { padding: 0 16px 16px; }
+.tb-office-bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px; padding: 10px 0; background: var(--o-bg); border-bottom: 1px solid var(--o-line); margin-bottom: 10px; }
+.tb-office-spacer { flex: 1; }
+.tb-office-look { width: auto !important; display: inline-block; }
+#toybox-editor .btn { display: inline-block; font: inherit; font-size: 13px; line-height: 1.9; padding: 0 12px; cursor: pointer; border-radius: 4px; border: 1px solid var(--o-line); color: var(--o-text); background: var(--o-soft); }
+#toybox-editor .btn:hover, .tb-office-modal .btn:hover { border-color: var(--o-accent); }
+#toybox-editor .btn-primary, .tb-office-modal .btn-primary { background: var(--o-accent); border-color: var(--o-accent); color: var(--o-on-accent); }
+#toybox-editor .btn-outline-primary { border-color: var(--o-accent); color: var(--o-accent); background: transparent; }
+#toybox-editor .btn-outline-danger { border-color: #d13438; color: #d13438; background: transparent; }
+#toybox-editor .btn-sm { font-size: 12px; }
+#toybox-editor .form-control, #toybox-editor .custom-select, #toybox-editor .form-select, .tb-office-look {
+  width: 100%; max-width: 100%; box-sizing: border-box; font: inherit; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--o-line); background: var(--o-bg); color: var(--o-text);
+}
+#toybox-editor .mod-toybox-ai select { width: auto; }
+#toybox-editor textarea.form-control { font-family: Consolas, Menlo, monospace; font-size: 12.5px; }
+#toybox-editor .form-check { display: flex; align-items: center; gap: 6px; }
+#toybox-editor .alert { padding: 8px 12px; border-left: 4px solid var(--o-accent); background: var(--o-soft); margin: 0 0 8px; }
+#toybox-editor .invalid-feedback { color: #d13438; font-size: 12px; }
+#toybox-editor .is-invalid { border-color: #d13438 !important; }
+#toybox-editor .small { font-size: 12px; }
+#toybox-editor .align-self-end { align-self: end; }
+#toybox-editor .mod-toybox-side { top: 60px; }
+.mod-toybox-files { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---- messages and questions */
+.tb-office-toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 100; max-width: min(90vw, 520px); padding: 10px 16px; border-radius: 6px; background: var(--o-text); color: var(--o-bg); box-shadow: 0 4px 16px rgba(0,0,0,.25); font-size: 13px; }
+.tb-office-modal { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(0,0,0,.4); padding: 16px; }
+.tb-office-modal-box { background: var(--o-bg); color: var(--o-text); border-radius: 8px; padding: 18px 20px; max-width: 440px; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+.tb-office-modal-box h2 { font-size: 16px; margin: 0 0 8px; }
+.tb-office-modal-box p { margin: 0 0 16px; }
+.tb-office-modal-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.tb-office-modal .btn { font: inherit; padding: 4px 14px; border-radius: 4px; border: 1px solid var(--o-line); background: var(--o-soft); color: var(--o-text); cursor: pointer; }
