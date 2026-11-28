@@ -6,10 +6,11 @@
   "scripts": {
     "sync": "node scripts/sync-core.mjs",
     "dev": "node scripts/sync-core.mjs demo && vite",
-    "build": "node scripts/sync-core.mjs demo && tsc --noEmit && vite build",
+    "build": "node scripts/sync-core.mjs demo && tsc --noEmit && vite build && node scripts/office-manifest.mjs office/manifest.xml dist/office/manifest.xml",
     "build:moodle": "node scripts/sync-core.mjs moodle && node scripts/build-moodle.mjs",
     "build:wordpress": "node scripts/sync-core.mjs wordpress && node scripts/build-wordpress.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:office": "node scripts/office-manifest.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.12",

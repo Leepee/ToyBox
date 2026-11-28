@@ -49,6 +49,7 @@ foreach (
         'makewithai', 'messages', 'messageshelp', 'novideo', 'noproblems', 'pausevideo', 'posx', 'posy', 'preview',
         'previewing', 'promptcopied', 'promptfailed', 'replacecode', 'requiredtoy', 'resumeoncomplete', 'saved',
         'savechanges', 'downloadguide_help', 'onlinevideo', 'history', 'historyempty', 'restoreversionconfirm', 'codelocked',
+        'badtoyfile', 'exported', 'exporttoy', 'exporttoy_help', 'importconfirm', 'imported', 'importtoy', 'importtoy_help',
         'shape', 'start', 'startfrom', 'starthere', 'starthere_help', 'toy', 'toycode', 'toylabel',
         'toyparams', 'unsaved', 'untitled', 'width'] as $key
 ) {

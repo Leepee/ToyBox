@@ -6,6 +6,7 @@ import { buildAiPrompt, guideWithTheme } from './aiPrompt';
 import { EXAMPLES, STARTER } from './examples';
 import { parseVideoUrl } from './media';
 import { el, fromServer, loadTheme, type EditorToy } from './hostKit';
+import { looksLikeToyFile, parseToyFile, toToyFile, toyFileName, type ToyFile } from './toyFile';
 import type { Aspect } from './types';
 import type { SiteTokens } from './theme';
 
@@ -43,6 +44,8 @@ export interface EditorHost {
   notify: (message: string, type?: 'success' | 'info' | 'warning' | 'danger') => void;
   alert: (title: string, message: string) => void;
   error: (e: unknown) => void;
+  /** Ask a yes/no question (hosts where window.confirm doesn't work, such as Office add-ins). */
+  confirm?: (message: string) => Promise<boolean>;
   /** Earlier versions of a saved toy, newest first (hosts that keep history). */
   history?: (toyId: string) => Promise<ToyVersion[]>;
   /** The code of one earlier version. */
@@ -64,6 +67,7 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
   let aspect: Aspect = cfg.aspect;
   let dirty = false;
   const locked = !!cfg.codeLocked;
+  const ask = (message: string) => (host.confirm ? host.confirm(message) : Promise.resolve(window.confirm(message)));
   const historyCache = new Map<string, Promise<ToyVersion[]>>();
 
   const blankToy = (): EditorToy => ({
@@ -237,6 +241,14 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
     html.value = t.html ?? '';
     let lintTimer = 0;
     html.oninput = () => {
+      // A whole toy file pasted into the code box: import it instead.
+      if (!locked && looksLikeToyFile(html.value)) {
+        try {
+          return applyToyFile(parseToyFile(html.value));
+        } catch {
+          /* not a valid toy file after all: keep it as code */
+        }
+      }
       t.html = html.value;
       markDirty();
       clearTimeout(lintTimer);
@@ -272,7 +284,7 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
     examples.onchange = async () => {
       const ex = EXAMPLES.find((e) => e.file === examples.value);
       if (!ex) return;
-      if (t.html?.trim() && t.html !== STARTER && !window.confirm(S.replacecode)) {
+      if (t.html?.trim() && t.html !== STARTER && !(await ask(S.replacecode))) {
         examples.value = '';
         return;
       }
@@ -305,7 +317,7 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
       sel.onchange = async () => {
         const vid = Number(sel.value);
         if (!vid) return;
-        if (!window.confirm(S.restoreversionconfirm)) {
+        if (!(await ask(S.restoreversionconfirm))) {
           sel.value = '';
           return;
         }
@@ -342,6 +354,63 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
         host.alert(S.copyaiprompt, S.promptfailed);
       }
     };
+
+    // Toy files: the same toy moves between Moodle, WordPress and PowerPoint.
+    const applyToyFile = (f: ToyFile) => {
+      t.html = f.html;
+      t.params = f.params ?? {};
+      if (f.label) t.label = f.label;
+      if (isVideo) {
+        if (f.rect) t.rect = { ...f.rect };
+        if (f.pause !== undefined) t.pause = f.pause;
+        if (f.resumeOnComplete !== undefined) t.resumeOnComplete = f.resumeOnComplete;
+      } else if (f.aspect) {
+        aspect = f.aspect;
+      }
+      if (f.required !== undefined) t.required = f.required;
+      markDirty();
+      renderTabs();
+      renderFields();
+      preview();
+      host.notify(S.imported, 'success');
+    };
+    const exportBtn = el<'button'>('button.btn.btn-outline-secondary', {
+      type: 'button',
+      text: '⬇ ' + S.exporttoy,
+      title: S.exporttoy_help,
+      onclick: async () => {
+        const text = toToyFile(t, isVideo ? undefined : aspect);
+        const a = el<'a'>('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/json' })), download: toyFileName(t.label) });
+        document.body.append(a);
+        a.click();
+        setTimeout(() => a.remove(), 1000);
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          /* the download is enough */
+        }
+        host.notify(S.exported, 'success');
+      },
+    });
+    const fileInput = el<'input'>('input', { type: 'file', accept: '.json,application/json', hidden: true });
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = '';
+      if (!file) return;
+      try {
+        const f = parseToyFile(await file.text());
+        if (t.html?.trim() && t.html !== STARTER && !(await ask(S.importconfirm))) return;
+        applyToyFile(f);
+      } catch {
+        host.alert(S.importtoy, S.badtoyfile);
+      }
+    };
+    const importBtn = el<'button'>('button.btn.btn-outline-secondary', {
+      type: 'button',
+      text: '⬆ ' + S.importtoy,
+      title: S.importtoy_help,
+      onclick: () => fileInput.click(),
+    });
 
     const rows: (Node | null)[] = [
       el(
@@ -446,6 +515,7 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
         examples,
         historySel,
       ),
+      el('div.mod-toybox-row.mod-toybox-files', {}, exportBtn, locked ? null : importBtn, fileInput),
       el('div.mod-toybox-field', {}, el('label', { for: 'mod-toybox-html', text: S.toycode }), html),
       el('div.mod-toybox-field', {}, el('label', { for: 'mod-toybox-params', text: S.toyparams }), params, paramsErr),
       el(
@@ -456,8 +526,8 @@ export async function mountEditor(root: Element, cfg: EditorConfig, host: Editor
           ? el('button.btn.btn-outline-danger', {
               type: 'button',
               text: S.deletetoy,
-              onclick: () => {
-                if (!window.confirm(S.deletetoyconfirm)) return;
+              onclick: async () => {
+                if (!(await ask(S.deletetoyconfirm))) return;
                 toys.splice(current, 1);
                 if (!toys.length) toys.push(blankToy());
                 markDirty();

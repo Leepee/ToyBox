@@ -4,7 +4,7 @@ Tags: interactive, video, education, html5, ai
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.1.2
+Stable tag: 0.1.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -31,6 +31,12 @@ Toys are code, so they never run in your page: each runs in a sandboxed iframe w
 3. Add the **ToyBox** block (or the shortcode shown on the toy) to a post or page.
 
 == Changelog ==
+
+= 0.1.4 =
+* Export toy / Import toy: move the same toy between WordPress, Moodle and the ToyBox PowerPoint add-in.
+
+= 0.1.3 =
+* Toys load from their own address with a content policy header; YouTube, Vimeo and Panopto are driven without loading their scripts.
 
 = 0.1.2 =
 * Volume slider. Panopto videos only load when first played (no muted autoplay), and a leftover volume of 0 is reset.

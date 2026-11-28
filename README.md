@@ -19,6 +19,7 @@ moodle/
 wordpress/
   src/           TypeScript for the WordPress pages (front end + Toy edit screen)
   toybox/        the WordPress plugin: see wordpress/toybox/readme.txt
+office/          the PowerPoint add-in (toys on slides): see office/README.md
 scripts/         build helpers and the sine-wave video renderer
 ```
 
