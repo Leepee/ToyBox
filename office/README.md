@@ -9,6 +9,8 @@ Put an interactive toy on a slide: sliders, drawings, quizzes and simulations th
 3. Drag and resize the box like a picture. The toy fills it.
 4. In the slide show the toy is fully interactive. The **Edit toy** button only shows while editing.
 
+**Quicker to reach:** once used, ToyBox is listed straight away under *Home → Add-ins*. PowerPoint doesn't let this kind of add-in (one that sits on the slide) have its own ribbon button, but you can put the Add-ins button on the Insert tab: *File → Options → Customize Ribbon*, choose *Insert* on the right and press *New Group*, then from *All Commands* on the left add *Add-ins* (or *My Add-ins*) to it. On Windows you can also right-click *Home → Add-ins* and choose *Add to Quick Access Toolbar*.
+
 The toy is saved inside the presentation, so it travels with the file. People who open the file need the ToyBox add-in too; without it, PowerPoint shows a still picture of the toy.
 
 **Same toy in Moodle:** in the editor press **Export toy**. That downloads a `.toybox.json` file and copies it. In Moodle's *Edit toys*, press **Import toy** (or paste the copied file into *Toy code*), then save. It works the other way round too.
