@@ -4,10 +4,12 @@ Put an interactive toy on a slide: sliders, drawings, quizzes and simulations th
 
 ## Using it
 
-1. **Insert → Add-ins → ToyBox** (under *My add-ins* or *Admin managed*). A ToyBox box appears on the slide.
+1. **Home → Add-ins**, then choose **ToyBox** (it's listed once installed; Microsoft moved add-ins from the Insert tab to the Home tab). A ToyBox box appears on the slide.
 2. Pick an example, or press **Make or edit a toy** to open the editor. Press **Save to slide** when you're done.
 3. Drag and resize the box like a picture. The toy fills it.
 4. In the slide show the toy is fully interactive. The **Edit toy** button only shows while editing.
+
+**Quicker to reach:** once used, ToyBox is listed straight away under *Home → Add-ins*. PowerPoint doesn't let this kind of add-in (one that sits on the slide) have its own ribbon button, but you can put the Add-ins button on the Insert tab: *File → Options → Customize Ribbon*, choose *Insert* on the right and press *New Group*, then from *All Commands* on the left add *Add-ins* (or *My Add-ins*) to it. On Windows you can also right-click *Home → Add-ins* and choose *Add to Quick Access Toolbar*.
 
 The toy is saved inside the presentation, so it travels with the file. People who open the file need the ToyBox add-in too; without it, PowerPoint shows a still picture of the toy.
 
@@ -19,13 +21,21 @@ The add-in is a web page that PowerPoint loads from this repository's GitHub Pag
 
 ### For everyone at the institution (IT)
 
-A Microsoft 365 administrator deploys it once: **Microsoft 365 admin center → Settings → Integrated apps → Upload custom apps → Office Add-in**, upload `manifest.xml` (or give its URL), and choose who gets it. It then appears for those people under *Insert → Add-ins → Admin managed* in PowerPoint for Windows, Mac and the web, usually within a day.
+A Microsoft 365 administrator deploys it once: **Microsoft 365 admin center → Settings → Integrated apps → Upload custom apps → Office Add-in**, upload `manifest.xml` (or give its URL), and choose who gets it. It then appears for those people under *Home → Add-ins* (as *Admin managed*) in PowerPoint for Windows, Mac and the web, usually within a day.
 
 ### Just you, for trying it out
 
-- **PowerPoint for the web:** *Insert → Add-ins → More add-ins → My add-ins → Upload My Add-in*, choose `manifest.xml`.
-- **Mac:** copy `manifest.xml` into `~/Library/Containers/com.microsoft.Powerpoint/Data/Documents/wef` (create the `wef` folder if needed), restart PowerPoint, then *Insert → Add-ins → My add-ins*.
-- **Windows:** put `manifest.xml` in a shared network folder, add that folder in *File → Options → Trust Center → Trust Center Settings → Trusted Add-in Catalogs* (tick *Show in Menu*), restart PowerPoint, then *Insert → Add-ins → My add-ins → Shared folder*.
+Microsoft moves these menus around, so the names may differ slightly.
+
+- **PowerPoint for the web:** *Home → Add-ins → Advanced → Upload My Add-in*, and choose `manifest.xml`.
+- **Windows:** the *File → Options → Add-ins* screen is for old-style `.ppam` macro add-ins and can't load ToyBox. Use one of these instead:
+  - **A shared folder** (no admin rights needed; tested on Windows):
+    1. Make a folder (e.g. `C:\ToyBoxAddin`) and put `manifest.xml` in it.
+    2. Share it: right-click the folder → *Properties → Sharing → Share*, share it with yourself, and note the *Network path* (like `\\YOUR-PC\ToyBoxAddin`).
+    3. In PowerPoint: *File → Options → Trust Center → Trust Center Settings → Trusted Add-in Catalogs*. Paste the network path into *Catalog Url*, press *Add catalog*, tick *Show in Menu*, then OK.
+    4. Restart PowerPoint, then *Home → Add-ins → More Add-ins → Shared Folder → ToyBox*.
+  - **The developer setting** (registry): in *Registry Editor* go to `HKEY_CURRENT_USER\Software\Microsoft\Office\16.0\WEF\Developer` (create the `WEF` and `Developer` keys if they aren't there), add a *String Value* named `ToyBox` whose value is the full path to `manifest.xml` (e.g. `C:\ToyBoxAddin\manifest.xml`), and restart PowerPoint. ToyBox then appears under *Home → Add-ins* (look for *Developer Add-ins*).
+- **Mac:** copy `manifest.xml` into `~/Library/Containers/com.microsoft.Powerpoint/Data/Documents/wef` (create the `wef` folder if needed), restart PowerPoint, then *Home → Add-ins*.
 
 ## Where it works
 
